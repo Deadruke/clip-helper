@@ -6,124 +6,84 @@ import threading
 import subprocess
 from pathlib import Path
 
-from flask import Flask, send_from_directory, request, jsonify
-
+from flask import Flask, request, jsonify
 from telegram import (
-    Bot,
-    BotCommand,
-    MenuButtonWebApp,
-    WebAppInfo,
-    LabeledPrice,
     Update,
+    LabeledPrice,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
 )
-
 from telegram.ext import (
     Application,
     CommandHandler,
-    PreCheckoutQueryHandler,
     MessageHandler,
+    PreCheckoutQueryHandler,
     ContextTypes,
     filters,
 )
-
-from faster_whisper import WhisperModel
 
 
 # =========================================================
 # CONFIG
 # =========================================================
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBAPP_URL = os.getenv("WEBAPP_URL")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "")
 
-# Владелец
 OWNER_USERNAME = "youcoid"
-
-UPLOAD_DIR = Path("uploads")
-OUTPUT_DIR = Path("outputs")
-SUBTITLE_DIR = Path("subtitles")
-
-DATA_FILE = Path("data.json")
-
-UPLOAD_DIR.mkdir(exist_ok=True)
-OUTPUT_DIR.mkdir(exist_ok=True)
-SUBTITLE_DIR.mkdir(exist_ok=True)
-
-web = Flask(__name__)
-
-data_lock = threading.Lock()
+PREMIUM_PRICE = 50
 
 
 # =========================================================
-# WHISPER
+# PATHS
 # =========================================================
 
-WHISPER_MODEL = None
-whisper_lock = threading.Lock()
+BASE_DIR = Path(__file__).resolve().parent
+
+UPLOADS_DIR = BASE_DIR / "uploads"
+OUTPUTS_DIR = BASE_DIR / "outputs"
+SUBTITLES_DIR = BASE_DIR / "subtitles"
+
+UPLOADS_DIR.mkdir(exist_ok=True)
+OUTPUTS_DIR.mkdir(exist_ok=True)
+SUBTITLES_DIR.mkdir(exist_ok=True)
+
+DATA_FILE = BASE_DIR / "data.json"
 
 
-def get_whisper():
+# =========================================================
+# FLASK
+# =========================================================
 
-    global WHISPER_MODEL
-
-    with whisper_lock:
-
-        if WHISPER_MODEL is None:
-
-            print("Загрузка Whisper...")
-
-            WHISPER_MODEL = WhisperModel(
-                "small",
-                device="cpu",
-                compute_type="int8"
-            )
-
-            print("Whisper загружен!")
-
-    return WHISPER_MODEL
+app = Flask(__name__)
 
 
 # =========================================================
 # DATA
 # =========================================================
 
+data_lock = threading.Lock()
+
+
 def load_data():
-
     if not DATA_FILE.exists():
-
         return {
             "users": {}
         }
 
     try:
-
-        with open(
-            DATA_FILE,
-            "r",
-            encoding="utf-8"
-        ) as f:
-
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-
     except Exception:
-
         return {
             "users": {}
         }
 
 
 def save_data(data):
+    temp = DATA_FILE.with_suffix(".tmp")
 
-    temp = Path(
-        "data.json.tmp"
-    )
-
-    with open(
-        temp,
-        "w",
-        encoding="utf-8"
-    ) as f:
-
+    with open(temp, "w", encoding="utf-8") as f:
         json.dump(
             data,
             f,
@@ -131,26 +91,27 @@ def save_data(data):
             indent=2
         )
 
-    temp.replace(
-        DATA_FILE
-    )
+    temp.replace(DATA_FILE)
 
 
-def ensure_user(
-    user_id,
-    username=None
-):
+def ensure_user(chat_id, username=""):
+    chat_id = str(chat_id)
 
-    user_id = str(user_id)
+    username = (
+        username or ""
+    ).replace("@", "").strip()
 
     with data_lock:
 
         data = load_data()
 
-        if user_id not in data["users"]:
+        users = data.setdefault("users", {})
 
-            data["users"][user_id] = {
-                "username": username or "",
+        if chat_id not in users:
+
+            users[chat_id] = {
+                "chat_id": chat_id,
+                "username": username,
                 "premium": False,
                 "processed": 0,
                 "processing": [],
@@ -160,175 +121,115 @@ def ensure_user(
         else:
 
             if username:
+                users[chat_id]["username"] = username
 
-                data["users"][user_id][
-                    "username"
-                ] = username
+        if username.lower() == OWNER_USERNAME.lower():
+            users[chat_id]["premium"] = True
 
         save_data(data)
 
-        return data["users"][user_id]
+        return users[chat_id]
 
 
-# =========================================================
-# OWNER
-# =========================================================
+def get_user(chat_id):
+    data = load_data()
 
-def is_owner_username(username):
+    return data.get(
+        "users",
+        {}
+    ).get(str(chat_id))
 
-    if not username:
-        return False
 
+def is_owner(username):
     return (
-        username.lower().lstrip("@")
+        str(username or "")
+        .replace("@", "")
+        .lower()
         ==
         OWNER_USERNAME.lower()
     )
 
 
-def is_owner_id(user_id):
+# =========================================================
+# HELPERS
+# =========================================================
 
-    user_id = str(user_id)
+def safe_name(name):
+    name = Path(name).name
 
+    allowed = (
+        "abcdefghijklmnopqrstuvwxyz"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "0123456789"
+        "._-"
+    )
+
+    return "".join(
+        char if char in allowed else "_"
+        for char in name
+    )
+
+
+def quality_height(quality):
+    try:
+        q = int(quality)
+    except Exception:
+        q = 1080
+
+    allowed = [
+        144,
+        360,
+        480,
+        720,
+        1080,
+        1440,
+        2160
+    ]
+
+    if q not in allowed:
+        q = 1080
+
+    return q
+
+
+def update_processing(
+    chat_id,
+    job_id,
+    status
+):
     with data_lock:
 
         data = load_data()
 
         user = data["users"].get(
-            user_id
+            str(chat_id)
         )
 
         if not user:
-            return False
+            return
 
-        return is_owner_username(
-            user.get("username")
-        )
-
-
-# =========================================================
-# ADMIN HELPERS
-# =========================================================
-
-def find_user_by_username(
-    username
-):
-
-    username = (
-        username
-        .lower()
-        .lstrip("@")
-    )
-
-    with data_lock:
-
-        data = load_data()
-
-        for user_id, user in data[
-            "users"
-        ].items():
-
-            saved_username = (
-                user.get(
-                    "username",
-                    ""
-                )
-                .lower()
-                .lstrip("@")
-            )
-
-            if saved_username == username:
-
-                return (
-                    user_id,
-                    user
-                )
-
-    return None, None
-
-
-def premium_users():
-
-    result = []
-
-    with data_lock:
-
-        data = load_data()
-
-        for user_id, user in data[
-            "users"
-        ].items():
-
-            if user.get(
-                "premium",
-                False
-            ):
-
-                result.append({
-                    "user_id": user_id,
-                    "username": user.get(
-                        "username",
-                        ""
-                    ),
-                    "processed": user.get(
-                        "processed",
-                        0
-                    )
-                })
-
-    return result
-
-
-# =========================================================
-# PROCESSING DATA
-# =========================================================
-
-def add_processing(
-    user_id,
-    job_id,
-    filename
-):
-
-    with data_lock:
-
-        data = load_data()
-
-        user = data["users"].setdefault(
-            str(user_id),
-            {
-                "username": "",
-                "premium": False,
-                "processed": 0,
-                "processing": [],
-                "history": []
-            }
-        )
-
-        user.setdefault(
+        for item in user.get(
             "processing",
             []
-        ).append({
-            "id": job_id,
-            "filename": filename,
-            "status": "processing"
-        })
+        ):
+
+            if item.get("id") == job_id:
+
+                item["status"] = status
 
         save_data(data)
 
 
-def finish_processing(
-    user_id,
-    job_id,
-    filename,
-    success
+def remove_processing(
+    chat_id,
+    job_id
 ):
-
     with data_lock:
 
         data = load_data()
 
         user = data["users"].get(
-            str(user_id)
+            str(chat_id)
         )
 
         if not user:
@@ -343,350 +244,217 @@ def finish_processing(
             if item.get("id") != job_id
         ]
 
-        if success:
+        save_data(data)
 
-            user["processed"] = (
-                user.get(
-                    "processed",
-                    0
-                ) + 1
-            )
 
-            user.setdefault(
-                "history",
-                []
-            ).insert(
-                0,
-                {
-                    "id": job_id,
-                    "filename": filename
-                }
-            )
+def add_history(
+    chat_id,
+    filename,
+    status="Готово"
+):
+    with data_lock:
 
-            user["history"] = (
-                user["history"][:30]
-            )
+        data = load_data()
+
+        user = data["users"].get(
+            str(chat_id)
+        )
+
+        if not user:
+            return
+
+        user["processed"] = (
+            user.get("processed", 0) + 1
+        )
+
+        user.setdefault(
+            "history",
+            []
+        ).append({
+            "filename": filename,
+            "status": status
+        })
+
+        user["history"] = user[
+            "history"
+        ][-50:]
 
         save_data(data)
 
 
 # =========================================================
-# WEB
+# FFMPEG
 # =========================================================
 
-@web.route("/")
-def index():
+def run_command(command, timeout=3600):
 
-    return send_from_directory(
-        "templates",
-        "index.html"
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
     )
 
-
-# =========================================================
-# USER API
-# =========================================================
-
-@web.route(
-    "/api/user",
-    methods=["GET"]
-)
-def api_user():
-
     try:
 
-        user_id = request.args.get(
-            "user_id"
+        stdout, stderr = process.communicate(
+            timeout=timeout
         )
 
-        if not user_id:
+    except subprocess.TimeoutExpired:
 
-            return jsonify({
-                "ok": False,
-                "error": "User ID не получен"
-            }), 400
+        process.kill()
 
-        user = ensure_user(
-            user_id
+        stdout, stderr = process.communicate()
+
+        raise RuntimeError(
+            "Обработка видео превысила допустимое время."
         )
 
-        return jsonify({
-            "ok": True,
-            "user_id": user_id,
-            "premium": user.get(
-                "premium",
-                False
-            ),
-            "processed": user.get(
-                "processed",
-                0
-            ),
-            "processing": user.get(
-                "processing",
-                []
-            ),
-            "history": user.get(
-                "history",
-                []
-            )
-        })
+    if process.returncode != 0:
 
-    except Exception as e:
-
-        print(
-            "USER API ERROR:",
-            e
+        error = (
+            stderr[-5000:]
+            if stderr
+            else "FFmpeg завершился с ошибкой."
         )
 
-        return jsonify({
-            "ok": False,
-            "error": str(e)
-        }), 500
+        raise RuntimeError(error)
 
-
-# =========================================================
-# UPLOAD
-# =========================================================
-
-@web.route(
-    "/api/upload",
-    methods=["POST"]
-)
-def upload_video():
-
-    try:
-
-        video = request.files.get(
-            "video"
-        )
-
-        chat_id = request.form.get(
-            "chat_id"
-        )
-
-        username = request.form.get(
-            "username",
-            ""
-        )
-
-        quality = int(
-            request.form.get(
-                "quality",
-                1080
-            )
-        )
-
-        video_format = request.form.get(
-            "format",
-            "vertical"
-        )
-
-        subtitles = request.form.get(
-            "subtitles",
-            "off"
-        )
-
-        ai = (
-            request.form.get(
-                "ai",
-                "false"
-            )
-            == "true"
-        )
-
-        if not video:
-
-            return jsonify({
-                "ok": False,
-                "error": "Видео не получено"
-            }), 400
-
-        if not chat_id:
-
-            return jsonify({
-                "ok": False,
-                "error": "Chat ID не получен"
-            }), 400
-
-        user = ensure_user(
-            chat_id,
-            username
-        )
-
-        premium = user.get(
-            "premium",
-            False
-        )
-
-        # Владелец всегда Premium
-        if is_owner_username(username):
-
-            premium = True
-
-            with data_lock:
-
-                data = load_data()
-
-                data["users"][
-                    str(chat_id)
-                ]["premium"] = True
-
-                save_data(data)
-
-        normal_quality = [
-            144,
-            360,
-            480,
-            720,
-            1080
-        ]
-
-        premium_quality = [
-            144,
-            360,
-            480,
-            720,
-            1080,
-            1440,
-            2160
-        ]
-
-        if premium:
-
-            if quality not in premium_quality:
-
-                quality = 1080
-
-        else:
-
-            if quality not in normal_quality:
-
-                quality = 1080
-
-            if quality > 1080:
-
-                quality = 1080
-
-        job_id = uuid.uuid4().hex
-
-        input_path = (
-            UPLOAD_DIR /
-            f"{job_id}.mp4"
-        )
-
-        output_path = (
-            OUTPUT_DIR /
-            f"{job_id}_out.mp4"
-        )
-
-        filename = (
-            video.filename
-            or "video.mp4"
-        )
-
-        video.save(
-            input_path
-        )
-
-        if not input_path.exists():
-
-            raise Exception(
-                "Видео не сохранилось"
-            )
-
-        add_processing(
-            chat_id,
-            job_id,
-            filename
-        )
-
-        threading.Thread(
-            target=process_video,
-            args=(
-                input_path,
-                output_path,
-                chat_id,
-                quality,
-                video_format,
-                subtitles,
-                ai,
-                job_id,
-                filename
-            ),
-            daemon=True
-        ).start()
-
-        return jsonify({
-            "ok": True,
-            "job_id": job_id,
-            "message": (
-                "Видео отправлено "
-                "на обработку"
-            )
-        })
-
-    except Exception as e:
-
-        print(
-            "UPLOAD ERROR:",
-            e
-        )
-
-        return jsonify({
-            "ok": False,
-            "error": str(e)
-        }), 500
+    return stdout
 
 
 # =========================================================
 # SUBTITLES
 # =========================================================
 
-def format_timestamp(seconds):
-
-    milliseconds = int(
-        (seconds % 1) * 1000
-    )
-
-    total = int(seconds)
-
-    hours = total // 3600
-
-    minutes = (
-        total % 3600
-    ) // 60
-
-    secs = total % 60
-
-    return (
-        f"{hours:02d}:"
-        f"{minutes:02d}:"
-        f"{secs:02d},"
-        f"{milliseconds:03d}"
-    )
-
-
 def create_subtitles(
-    input_path,
+    video_path,
     subtitle_path,
-    style
+    bold=False
 ):
 
-    print(
-        "Запускаю Whisper..."
+    try:
+        from faster_whisper import WhisperModel
+    except Exception as e:
+        raise RuntimeError(
+            f"Whisper недоступен: {e}"
+        )
+
+    model = WhisperModel(
+        "small",
+        device="cpu",
+        compute_type="int8"
     )
 
-    model = get_whisper()
-
     segments, info = model.transcribe(
-        str(input_path),
+        str(video_path),
         beam_size=5,
         vad_filter=True
     )
 
-    segments = list(
-        segments
+    font_weight = "bold" if bold else "normal"
+
+    lines = []
+
+    lines.append(
+        "[Script Info]\n"
+        "ScriptType: v4.00+\n"
+        "PlayResX: 1080\n"
+        "PlayResY: 1920\n"
+        "\n"
+        "[V4+ Styles]\n"
+        "Format: Name, Fontname, Fontsize, "
+        "PrimaryColour, SecondaryColour, "
+        "OutlineColour, BackColour, Bold, "
+        "Italic, Underline, StrikeOut, ScaleX, "
+        "ScaleY, Spacing, Angle, BorderStyle, "
+        "Outline, Shadow, Alignment, MarginL, "
+        "MarginR, MarginV, Encoding\n"
     )
+
+    if bold:
+        bold_value = 1
+    else:
+        bold_value = 0
+
+    lines.append(
+        "Style: Default,Arial,58,"
+        "&H00FFFFFF,&H00FFFFFF,"
+        "&H00000000,&H80000000,"
+        f"{bold_value},0,0,0,100,100,0,0,1,3,1,2,40,40,120,1\n"
+    )
+
+    lines.append(
+        "\n[Events]\n"
+        "Format: Layer, Start, End, Style, "
+        "Name, MarginL, MarginR, MarginV, "
+        "Effect, Text\n"
+    )
+
+    def ass_time(seconds):
+
+        total = max(
+            0,
+            int(seconds)
+        )
+
+        h = total // 3600
+
+        m = (
+            total % 3600
+        ) // 60
+
+        s = total % 60
+
+        cs = int(
+            (seconds - int(seconds)) * 100
+        )
+
+        return (
+            f"{h}:"
+            f"{m:02d}:"
+            f"{s:02d}."
+            f"{cs:02d}"
+        )
+
+    for segment in segments:
+
+        text = (
+            segment.text
+            .strip()
+            .replace(
+                "\n",
+                " "
+            )
+            .replace(
+                "{",
+                ""
+            )
+            .replace(
+                "}",
+                ""
+            )
+        )
+
+        if not text:
+            continue
+
+        start = ass_time(
+            segment.start
+        )
+
+        end = ass_time(
+            segment.end
+        )
+
+        lines.append(
+            f"Dialogue: 0,"
+            f"{start},"
+            f"{end},"
+            f"Default,,0,0,0,,"
+            f"{text}\n"
+        )
 
     with open(
         subtitle_path,
@@ -694,254 +462,152 @@ def create_subtitles(
         encoding="utf-8"
     ) as f:
 
-        f.write(
-            "[Script Info]\n"
-        )
-
-        f.write(
-            "ScriptType: v4.00+\n"
-        )
-
-        f.write(
-            "PlayResX: 1080\n"
-        )
-
-        f.write(
-            "PlayResY: 1920\n\n"
-        )
-
-        f.write(
-            "[V4+ Styles]\n"
-        )
-
-        f.write(
-            "Format: Name, Fontname, "
-            "Fontsize, PrimaryColour, "
-            "SecondaryColour, "
-            "OutlineColour, BackColour, "
-            "Bold, Italic, Underline, "
-            "StrikeOut, ScaleX, ScaleY, "
-            "Spacing, Angle, BorderStyle, "
-            "Outline, Shadow, Alignment, "
-            "MarginL, MarginR, MarginV, "
-            "Encoding\n"
-        )
-
-        if style == "bold":
-
-            bold = -1
-            size = 58
-
-        else:
-
-            bold = 0
-            size = 52
-
-        f.write(
-            f"Style: Default,"
-            f"Arial,"
-            f"{size},"
-            f"&H00FFFFFF,"
-            f"&H000000FF,"
-            f"&H00000000,"
-            f"&H80000000,"
-            f"{bold},"
-            f"0,0,0,100,100,0,0,1,3,1,2,"
-            f"40,40,120,1\n\n"
-        )
-
-        f.write(
-            "[Events]\n"
-        )
-
-        f.write(
-            "Format: Layer, Start, End, "
-            "Style, Name, MarginL, "
-            "MarginR, MarginV, Effect, Text\n"
-        )
-
-        for segment in segments:
-
-            start = (
-                segment.start
-            )
-
-            end = (
-                segment.end
-            )
-
-            text = (
-                segment.text
-                .strip()
-                .replace(
-                    "\n",
-                    " "
-                )
-            )
-
-            if not text:
-                continue
-
-            start_ass = (
-                format_timestamp(
-                    start
-                )
-                .replace(",", ".")
-            )
-
-            end_ass = (
-                format_timestamp(
-                    end
-                )
-                .replace(",", ".")
-            )
-
-            # ASS uses H:MM:SS.CC
-            start_ass = (
-                start_ass[:8]
-                + "."
-                + start_ass[9:11]
-            )
-
-            end_ass = (
-                end_ass[:8]
-                + "."
-                + end_ass[9:11]
-            )
-
-            f.write(
-                f"Dialogue: 0,"
-                f"{start_ass},"
-                f"{end_ass},"
-                f"Default,"
-                f",0,0,0,,"
-                f"{text}\n"
-            )
-
-    print(
-        "Субтитры созданы:",
-        subtitle_path
-    )
+        f.writelines(lines)
 
 
 # =========================================================
-# PROCESS
+# VIDEO PROCESSING
 # =========================================================
 
 def process_video(
+    chat_id,
+    job_id,
     input_path,
     output_path,
-    chat_id,
     quality,
     video_format,
     subtitles,
-    ai,
-    job_id,
-    filename
+    ai
 ):
-
-    success = False
-
-    subtitle_path = (
-        SUBTITLE_DIR /
-        f"{job_id}.ass"
-    )
 
     try:
 
-        # ---------------------------------------------
+        update_processing(
+            chat_id,
+            job_id,
+            "Подготовка видео..."
+        )
+
+        quality = quality_height(
+            quality
+        )
+
+        subtitle_path = None
+
+        # -------------------------------------------------
         # SUBTITLES
-        # ---------------------------------------------
+        # -------------------------------------------------
 
-        subtitle_filter = None
+        if subtitles != "off":
 
-        if subtitles in [
-            "normal",
-            "bold"
-        ]:
+            update_processing(
+                chat_id,
+                job_id,
+                "Создаю субтитры..."
+            )
+
+            subtitle_path = (
+                SUBTITLES_DIR /
+                f"{job_id}.ass"
+            )
 
             create_subtitles(
                 input_path,
                 subtitle_path,
-                subtitles
+                subtitles == "bold"
             )
 
-            subtitle_filter = (
-                f"ass={subtitle_path}"
-            )
-
-        # ---------------------------------------------
-        # VIDEO SCALE
-        # ---------------------------------------------
+        # -------------------------------------------------
+        # VIDEO FILTER
+        # -------------------------------------------------
 
         filters = []
 
-        if video_format == "vertical":
+        if video_format == "9:16":
 
-            width = int(
-                quality * 9 / 16
-            )
-
-            width -= (
-                width % 2
+            filters.append(
+                "scale="
+                f"{quality}:"
+                f"{int(quality * 16 / 9)}:"
+                "force_original_aspect_ratio=increase"
             )
 
             filters.append(
-                f"scale={width}:{quality}:"
-                "force_original_aspect_ratio=decrease"
-            )
-
-            filters.append(
-                f"pad={width}:{quality}:"
-                "(ow-iw)/2:(oh-ih)/2"
+                "crop="
+                f"{quality}:"
+                f"{int(quality * 16 / 9)}"
             )
 
         else:
 
             filters.append(
-                f"scale=-2:{quality}"
+                "scale="
+                f"min({quality}\\,iw):"
+                f"min({quality}\\,ih):"
+                "force_original_aspect_ratio=decrease"
             )
 
-        # ---------------------------------------------
-        # QUALITY
-        # ---------------------------------------------
+        # -------------------------------------------------
+        # AI-LIKE IMAGE ENHANCEMENT
+        # -------------------------------------------------
 
         if ai:
 
             filters.append(
-                "hqdn3d=1.2:1.2:6:6"
+                "hqdn3d=1.5:1.5:6:6"
             )
 
             filters.append(
-                "unsharp=5:5:0.65:5:5:0.0"
+                "unsharp="
+                "5:5:1.0:"
+                "5:5:0.0"
             )
 
-        if subtitle_filter:
+        # -------------------------------------------------
+        # SUBTITLE FILTER
+        # -------------------------------------------------
+
+        if subtitle_path:
+
+            escaped = str(
+                subtitle_path
+            ).replace(
+                "\\",
+                "/"
+            ).replace(
+                ":",
+                "\\:"
+            ).replace(
+                "'",
+                "\\'"
+            )
 
             filters.append(
-                subtitle_filter
+                f"ass='{escaped}'"
             )
 
-        filter_string = ",".join(
+        filter_complex = ",".join(
             filters
         )
 
-        # ---------------------------------------------
-        # ENCODE
-        # ---------------------------------------------
+        # -------------------------------------------------
+        # ENCODING
+        # -------------------------------------------------
+
+        update_processing(
+            chat_id,
+            job_id,
+            "Обрабатываю видео..."
+        )
 
         command = [
             "ffmpeg",
             "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-
             "-i",
             str(input_path),
 
             "-vf",
-            filter_string,
+            filter_complex,
 
             "-c:v",
             "libx264",
@@ -967,89 +633,80 @@ def process_video(
             str(output_path)
         ]
 
-        print(
-            "FFmpeg:",
-            " ".join(command)
-        )
-
-        result = subprocess.run(
+        run_command(
             command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+            timeout=3600
         )
 
-        if result.returncode != 0:
+        update_processing(
+            chat_id,
+            job_id,
+            "Видео готово!"
+        )
 
-            raise Exception(
-                result.stderr[-5000:]
-            )
+        add_history(
+            chat_id,
+            output_path.name,
+            "Готово"
+        )
 
-        if not output_path.exists():
-
-            raise Exception(
-                "FFmpeg не создал файл"
-            )
-
-        # ---------------------------------------------
-        # SEND
-        # ---------------------------------------------
+        # -------------------------------------------------
+        # SEND TO TELEGRAM
+        # -------------------------------------------------
 
         asyncio.run(
-            send_video(
+            send_result(
                 chat_id,
-                output_path,
-                quality,
-                subtitles
+                output_path
             )
         )
-
-        success = True
 
     except Exception as e:
 
         print(
-            "\nPROCESS ERROR:"
+            "PROCESS ERROR:",
+            repr(e)
         )
 
-        print(e)
-
-        print(
-            "\n"
+        update_processing(
+            chat_id,
+            job_id,
+            "Ошибка обработки"
         )
 
-        try:
-
-            asyncio.run(
-                send_error(
-                    chat_id
-                )
-            )
-
-        except Exception:
-            pass
+        add_history(
+            chat_id,
+            output_path.name,
+            f"Ошибка: {str(e)[:150]}"
+        )
 
     finally:
 
-        finish_processing(
+        remove_processing(
             chat_id,
-            job_id,
-            filename,
-            success
+            job_id
         )
 
-        for path in [
-            input_path,
-            output_path,
-            subtitle_path
-        ]:
+        try:
+            input_path.unlink(
+                missing_ok=True
+            )
+        except Exception:
+            pass
+
+        try:
+            output_path.unlink(
+                missing_ok=True
+            )
+        except Exception:
+            pass
+
+        if subtitle_path:
 
             try:
-
-                path.unlink(
+                subtitle_path.unlink(
                     missing_ok=True
                 )
-
             except Exception:
                 pass
 
@@ -1058,96 +715,351 @@ def process_video(
 # TELEGRAM SEND
 # =========================================================
 
-async def send_video(
+async def send_result(
     chat_id,
-    output_path,
-    quality,
-    subtitles
+    output_path
 ):
-
-    bot = Bot(
-        BOT_TOKEN
-    )
-
-    subtitle_text = (
-        " + субтитры"
-        if subtitles != "off"
-        else ""
-    )
-
-    with open(
-        output_path,
-        "rb"
-    ) as video:
-
-        await bot.send_video(
-            chat_id=int(chat_id),
-            video=video,
-            supports_streaming=True,
-            caption=(
-                "✅ ClipForge готов!\n\n"
-                f"Качество: {quality}p"
-                f"{subtitle_text}"
-            ),
-            read_timeout=300,
-            write_timeout=300,
-            connect_timeout=30
-        )
-
-
-async def send_error(
-    chat_id
-):
-
-    bot = Bot(
-        BOT_TOKEN
-    )
-
-    await bot.send_message(
-        chat_id=int(chat_id),
-        text=(
-            "❌ Во время обработки "
-            "произошла ошибка.\n"
-            "Попробуй ещё раз."
-        )
-    )
-
-
-# =========================================================
-# PREMIUM PAYMENT
-# =========================================================
-
-@web.route(
-    "/api/create-premium-invoice",
-    methods=["POST"]
-)
-def create_invoice():
 
     try:
 
-        body = (
-            request.get_json(
-                silent=True
-            )
-            or {}
+        from telegram import Bot
+
+        bot = Bot(
+            token=BOT_TOKEN
         )
 
-        user_id = str(
-            body.get(
-                "user_id",
-                ""
+        with open(
+            output_path,
+            "rb"
+        ) as video:
+
+            await bot.send_video(
+                chat_id=int(chat_id),
+                video=video,
+                supports_streaming=True,
+                caption="✅ Видео готово!"
             )
+
+    except Exception as e:
+
+        print(
+            "SEND ERROR:",
+            repr(e)
         )
 
-        if not user_id:
+
+# =========================================================
+# API: USER
+# =========================================================
+
+@app.get("/api/user")
+def api_user():
+
+    chat_id = request.args.get(
+        "chat_id"
+    )
+
+    username = request.args.get(
+        "username",
+        ""
+    )
+
+    if not chat_id:
+
+        return jsonify({
+            "error": "chat_id required"
+        }), 400
+
+    user = ensure_user(
+        chat_id,
+        username
+    )
+
+    return jsonify(user)
+
+
+# =========================================================
+# API: UPLOAD
+# =========================================================
+
+@app.post("/api/upload")
+def api_upload():
+
+    try:
+
+        video = request.files.get(
+            "video"
+        )
+
+        if not video:
 
             return jsonify({
-                "ok": False,
-                "error": "User ID не получен"
+                "error": "Видео не найдено"
+            }), 400
+
+        chat_id = request.form.get(
+            "chat_id"
+        )
+
+        username = request.form.get(
+            "username",
+            ""
+        )
+
+        if not chat_id:
+
+            return jsonify({
+                "error": "Telegram ID не найден"
             }), 400
 
         user = ensure_user(
-            user_id
+            chat_id,
+            username
+        )
+
+        quality = quality_height(
+            request.form.get(
+                "quality",
+                "1080"
+            )
+        )
+
+        if (
+            quality > 1080
+            and not user["premium"]
+        ):
+
+            return jsonify({
+                "error":
+                    "2K и 4K доступны только Premium."
+            }), 403
+
+        video_format = request.form.get(
+            "format",
+            "9:16"
+        )
+
+        subtitles = request.form.get(
+            "subtitles",
+            "off"
+        )
+
+        ai = request.form.get(
+            "ai",
+            "false"
+        ) == "true"
+
+        job_id = str(
+            uuid.uuid4()
+        )
+
+        original_name = safe_name(
+            video.filename or "video.mp4"
+        )
+
+        input_path = (
+            UPLOADS_DIR /
+            f"{job_id}_{original_name}"
+        )
+
+        output_path = (
+            OUTPUTS_DIR /
+            f"{job_id}_clip.mp4"
+        )
+
+        video.save(
+            input_path
+        )
+
+        with data_lock:
+
+            data = load_data()
+
+            user = data["users"][
+                str(chat_id)
+            ]
+
+            user.setdefault(
+                "processing",
+                []
+            ).append({
+
+                "id": job_id,
+
+                "filename":
+                    original_name,
+
+                "status":
+                    "В очереди..."
+
+            })
+
+            save_data(data)
+
+        thread = threading.Thread(
+            target=process_video,
+            args=(
+                chat_id,
+                job_id,
+                input_path,
+                output_path,
+                quality,
+                video_format,
+                subtitles,
+                ai
+            ),
+            daemon=True
+        )
+
+        thread.start()
+
+        return jsonify({
+            "success": True,
+            "job_id": job_id,
+            "message":
+                "Видео отправлено на обработку."
+        })
+
+    except Exception as e:
+
+        print(
+            "UPLOAD ERROR:",
+            repr(e)
+        )
+
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+
+# =========================================================
+# PREMIUM INVOICE
+# =========================================================
+
+@app.post("/api/create-premium-invoice")
+def create_premium_invoice():
+
+    try:
+
+        body = request.get_json(
+            silent=True
+        ) or {}
+
+        chat_id = body.get(
+            "chat_id"
+        )
+
+        username = body.get(
+            "username",
+            ""
+        )
+
+        if not chat_id:
+
+            return jsonify({
+                "error":
+                    "Telegram ID не найден"
+            }), 400
+
+        user = ensure_user(
+            chat_id,
+            username
+        )
+
+        if user["premium"]:
+
+            return jsonify({
+                "error":
+                    "Premium уже активен"
+            }), 400
+
+        async def create():
+
+            from telegram import Bot
+
+            bot = Bot(
+                token=BOT_TOKEN
+            )
+
+            return await bot.create_invoice_link(
+
+                title="ClipForge Premium",
+
+                description=
+                    "Premium: 2K, 4K и дополнительные возможности.",
+
+                payload=
+                    f"premium:{chat_id}",
+
+                currency="XTR",
+
+                prices=[
+                    LabeledPrice(
+                        "ClipForge Premium",
+                        PREMIUM_PRICE
+                    )
+                ]
+
+            )
+
+        invoice_link = asyncio.run(
+            create()
+        )
+
+        return jsonify({
+            "invoice_link":
+                invoice_link
+        })
+
+    except Exception as e:
+
+        print(
+            "INVOICE ERROR:",
+            repr(e)
+        )
+
+        return jsonify({
+            "error": str(e)
+        }), 500
+
+
+# =========================================================
+# ADMIN API
+# =========================================================
+
+@app.get("/api/admin")
+def api_admin():
+
+    username = request.args.get(
+        "username",
+        ""
+    )
+
+    if not is_owner(username):
+
+        return jsonify({
+            "error":
+                "Доступ запрещён"
+        }), 403
+
+    data = load_data()
+
+    users = data.get(
+        "users",
+        {}
+    )
+
+    premium_list = []
+
+    total_processed = 0
+
+    for user in users.values():
+
+        total_processed += int(
+            user.get(
+                "processed",
+                0
+            )
         )
 
         if user.get(
@@ -1155,78 +1067,204 @@ def create_invoice():
             False
         ):
 
-            return jsonify({
-                "ok": False,
-                "error": "Premium уже активен"
-            }), 400
+            premium_list.append({
 
-        async def make():
+                "chat_id":
+                    user.get("chat_id"),
 
-            bot = Bot(
-                BOT_TOKEN
-            )
+                "username":
+                    user.get("username", "")
 
-            payload = (
-                f"premium:"
-                f"{user_id}:"
-                f"{uuid.uuid4().hex}"
-            )
+            })
 
-            return await bot.create_invoice_link(
-                title="ClipForge Premium",
-                description=(
-                    "2K и 4K обработка видео"
-                ),
-                payload=payload,
-                currency="XTR",
-                prices=[
-                    LabeledPrice(
-                        "Premium",
-                        50
-                    )
-                ]
-            )
+    return jsonify({
 
-        invoice = asyncio.run(
-            make()
+        "total_users":
+            len(users),
+
+        "total_processed":
+            total_processed,
+
+        "premium_users":
+            len(premium_list),
+
+        "premium_list":
+            premium_list
+
+    })
+
+
+@app.post("/api/admin/premium")
+def api_admin_premium():
+
+    try:
+
+        body = request.get_json(
+            silent=True
+        ) or {}
+
+        admin_username = body.get(
+            "admin_username",
+            ""
         )
 
+        username = (
+            body.get(
+                "username",
+                ""
+            )
+            .replace("@", "")
+            .strip()
+        )
+
+        action = body.get(
+            "action"
+        )
+
+        if not is_owner(
+            admin_username
+        ):
+
+            return jsonify({
+                "error":
+                    "Доступ запрещён"
+            }), 403
+
+        if not username:
+
+            return jsonify({
+                "error":
+                    "Username не указан"
+            }), 400
+
+        data = load_data()
+
+        target = None
+
+        for user in data.get(
+            "users",
+            {}
+        ).values():
+
+            if (
+                user.get(
+                    "username",
+                    ""
+                ).lower()
+                ==
+                username.lower()
+            ):
+
+                target = user
+                break
+
+        if not target:
+
+            return jsonify({
+                "error":
+                    "Пользователь ещё не запускал бота."
+            }), 404
+
+        if action == "grant":
+
+            target["premium"] = True
+
+            message = (
+                f"Premium выдан @{username}"
+            )
+
+        elif action == "remove":
+
+            target["premium"] = False
+
+            message = (
+                f"Premium снят с @{username}"
+            )
+
+        else:
+
+            return jsonify({
+                "error":
+                    "Неизвестное действие"
+            }), 400
+
+        save_data(data)
+
         return jsonify({
-            "ok": True,
-            "invoice_url": invoice
+            "success": True,
+            "message": message
         })
 
     except Exception as e:
 
-        print(
-            "INVOICE ERROR:",
-            e
-        )
-
         return jsonify({
-            "ok": False,
             "error": str(e)
         }), 500
 
 
 # =========================================================
-# PAYMENT CHECK
+# TELEGRAM BOT
 # =========================================================
 
-async def pre_checkout(
+async def start(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
 
-    query = (
-        update.pre_checkout_query
+    user = update.effective_user
+
+    if not user:
+        return
+
+    db_user = ensure_user(
+        user.id,
+        user.username or ""
     )
+
+    keyboard = [
+
+        [
+            InlineKeyboardButton(
+                "🚀 Открыть ClipForge",
+                web_app=None
+            )
+        ]
+
+    ]
+
+    if WEBAPP_URL:
+
+        keyboard = [[
+            InlineKeyboardButton(
+                "🚀 Открыть ClipForge",
+                web_app=__import__(
+                    "telegram"
+                ).WebAppInfo(
+                    WEBAPP_URL
+                )
+            )
+        ]]
+
+    await update.message.reply_text(
+        "🎬 ClipForge\n\n"
+        "Загружай видео и обрабатывай их "
+        "прямо через Mini App.",
+        reply_markup=InlineKeyboardMarkup(
+            keyboard
+        )
+    )
+
+
+async def precheckout(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    query = update.pre_checkout_query
 
     try:
 
-        payload = (
-            query.invoice_payload
-        )
+        payload = query.invoice_payload
 
         if not payload.startswith(
             "premium:"
@@ -1234,57 +1272,38 @@ async def pre_checkout(
 
             await query.answer(
                 ok=False,
-                error_message=(
+                error_message=
                     "Неверный платёж."
-                )
             )
 
             return
 
-        parts = payload.split(":")
+        chat_id = payload.split(
+            ":",
+            1
+        )[1]
 
-        payload_user_id = str(
-            parts[1]
-        )
-
-        actual_user_id = str(
+        if str(
             query.from_user.id
-        )
+        ) != str(chat_id):
+
+            await query.answer(
+                ok=False,
+                error_message=
+                    "Платёж создан для другого пользователя."
+            )
+
+            return
 
         if (
-            payload_user_id
-            !=
-            actual_user_id
+            query.currency != "XTR"
+            or query.total_amount != PREMIUM_PRICE
         ):
 
             await query.answer(
                 ok=False,
-                error_message=(
-                    "Платёж создан "
-                    "для другого пользователя."
-                )
-            )
-
-            return
-
-        if query.currency != "XTR":
-
-            await query.answer(
-                ok=False,
-                error_message=(
-                    "Неверная валюта."
-                )
-            )
-
-            return
-
-        if query.total_amount != 50:
-
-            await query.answer(
-                ok=False,
-                error_message=(
+                error_message=
                     "Неверная сумма."
-                )
             )
 
             return
@@ -1297,20 +1316,15 @@ async def pre_checkout(
 
         print(
             "PRECHECKOUT ERROR:",
-            e
+            repr(e)
         )
 
         await query.answer(
             ok=False,
-            error_message=(
-                "Не удалось проверить платёж."
-            )
+            error_message=
+                "Ошибка проверки платежа."
         )
 
-
-# =========================================================
-# SUCCESS PAYMENT
-# =========================================================
 
 async def successful_payment(
     update: Update,
@@ -1321,348 +1335,90 @@ async def successful_payment(
         update.message.successful_payment
     )
 
-    user_id = str(
-        update.effective_user.id
-    )
+    chat_id = update.effective_user.id
 
-    if (
-        payment.currency != "XTR"
-        or payment.total_amount != 50
-    ):
-
+    if payment.currency != "XTR":
         return
 
     with data_lock:
 
         data = load_data()
 
-        user = data["users"].setdefault(
-            user_id,
-            {
-                "username": "",
-                "premium": False,
-                "processed": 0,
-                "processing": [],
-                "history": []
-            }
+        user = data[
+            "users"
+        ].get(
+            str(chat_id)
         )
 
-        user["premium"] = True
+        if user:
 
-        save_data(data)
-
-    await update.message.reply_text(
-        "⭐ Premium активирован!\n\n"
-        "Теперь тебе доступны 2K и 4K."
-    )
-
-
-# =========================================================
-# ADMIN API
-# =========================================================
-
-def check_admin(
-    user_id,
-    username
-):
-
-    return is_owner_username(
-        username
-    ) or is_owner_id(
-        user_id
-    )
-
-
-@web.route(
-    "/api/admin",
-    methods=["GET"]
-)
-def admin_data():
-
-    try:
-
-        user_id = request.args.get(
-            "user_id"
-        )
-
-        username = request.args.get(
-            "username",
-            ""
-        )
-
-        if not check_admin(
-            user_id,
-            username
-        ):
-
-            return jsonify({
-                "ok": False,
-                "error": "Нет доступа"
-            }), 403
-
-        with data_lock:
-
-            data = load_data()
-
-            users = data.get(
-                "users",
-                {}
-            )
-
-            total_users = len(
-                users
-            )
-
-            total_processed = sum(
-                u.get(
-                    "processed",
-                    0
-                )
-                for u in users.values()
-            )
-
-        return jsonify({
-            "ok": True,
-            "users": total_users,
-            "processed": total_processed,
-            "premium": premium_users()
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e)
-        }), 500
-
-
-@web.route(
-    "/api/admin/premium",
-    methods=["POST"]
-)
-def admin_premium():
-
-    try:
-
-        body = (
-            request.get_json(
-                silent=True
-            )
-            or {}
-        )
-
-        admin_id = str(
-            body.get(
-                "admin_id",
-                ""
-            )
-        )
-
-        admin_username = body.get(
-            "admin_username",
-            ""
-        )
-
-        target_username = (
-            body.get(
-                "username",
-                ""
-            )
-            .lstrip("@")
-            .strip()
-        )
-
-        action = body.get(
-            "action"
-        )
-
-        if not check_admin(
-            admin_id,
-            admin_username
-        ):
-
-            return jsonify({
-                "ok": False,
-                "error": "Нет доступа"
-            }), 403
-
-        target_id, target = (
-            find_user_by_username(
-                target_username
-            )
-        )
-
-        if not target_id:
-
-            return jsonify({
-                "ok": False,
-                "error": (
-                    "Пользователь пока "
-                    "не запускал бота."
-                )
-            }), 404
-
-        with data_lock:
-
-            data = load_data()
-
-            if action == "grant":
-
-                data["users"][
-                    target_id
-                ]["premium"] = True
-
-            elif action == "remove":
-
-                data["users"][
-                    target_id
-                ]["premium"] = False
-
-            else:
-
-                return jsonify({
-                    "ok": False,
-                    "error": "Неизвестное действие"
-                }), 400
+            user["premium"] = True
 
             save_data(data)
 
-        return jsonify({
-            "ok": True,
-            "message": "Готово"
-        })
+    await update.message.reply_text(
+        "🎉 Оплата получена!\n\n"
+        "⭐ Premium активирован."
+    )
 
-    except Exception as e:
 
-        return jsonify({
-            "ok": False,
-            "error": str(e)
-        }), 500
+# =========================================================
+# HEALTH
+# =========================================================
+
+@app.get("/")
+def index():
+
+    return (
+        "ClipForge is running."
+    )
+
+
+@app.get("/health")
+def health():
+
+    return jsonify({
+        "status": "ok"
+    })
 
 
 # =========================================================
 # START
 # =========================================================
 
-async def start(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    user = (
-        update.effective_user
-    )
-
-    username = (
-        user.username
-        or ""
-    )
-
-    ensure_user(
-        user.id,
-        username
-    )
-
-    # Владелец автоматически Premium
-    if is_owner_username(
-        username
-    ):
-
-        with data_lock:
-
-            data = load_data()
-
-            data["users"][
-                str(user.id)
-            ]["premium"] = True
-
-            save_data(data)
-
-    await update.message.reply_text(
-        "🎬 ClipForge\n\n"
-        "Открой Mini App через кнопку "
-        "ClipForge."
-    )
-
-
-# =========================================================
-# BOT SETUP
-# =========================================================
-
-async def setup_bot(
-    application
-):
-
-    await application.bot.set_my_commands([
-        BotCommand(
-            "start",
-            "Запустить ClipForge"
-        )
-    ])
-
-    await application.bot.set_chat_menu_button(
-        menu_button=MenuButtonWebApp(
-            text="ClipForge",
-            web_app=WebAppInfo(
-                url=WEBAPP_URL
-            )
-        )
-    )
-
-    print(
-        "Mini App:",
-        WEBAPP_URL
-    )
-
-
-# =========================================================
-# WEB SERVER
-# =========================================================
-
-def run_web():
+def run_flask():
 
     port = int(
         os.getenv(
             "PORT",
-            10000
+            "10000"
         )
     )
 
-    web.run(
+    app.run(
         host="0.0.0.0",
-        port=port,
-        debug=False,
-        use_reloader=False
+        port=port
     )
 
-
-# =========================================================
-# MAIN
-# =========================================================
 
 def main():
 
     if not BOT_TOKEN:
 
         raise RuntimeError(
-            "BOT_TOKEN не найден"
+            "BOT_TOKEN не установлен."
         )
 
-    if not WEBAPP_URL:
-
-        raise RuntimeError(
-            "WEBAPP_URL не найден"
-        )
-
-    threading.Thread(
-        target=run_web,
+    flask_thread = threading.Thread(
+        target=run_flask,
         daemon=True
-    ).start()
+    )
+
+    flask_thread.start()
 
     application = (
         Application.builder()
         .token(BOT_TOKEN)
-        .post_init(setup_bot)
         .build()
     )
 
@@ -1675,7 +1431,7 @@ def main():
 
     application.add_handler(
         PreCheckoutQueryHandler(
-            pre_checkout
+            precheckout
         )
     )
 
@@ -1687,10 +1443,12 @@ def main():
     )
 
     print(
-        "ClipForge запущен!"
+        "ClipForge bot started."
     )
 
-    application.run_polling()
+    application.run_polling(
+        drop_pending_updates=True
+    )
 
 
 if __name__ == "__main__":
