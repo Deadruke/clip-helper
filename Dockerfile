@@ -14,6 +14,4 @@ COPY . .
 
 RUN mkdir -p uploads outputs
 
-EXPOSE 10000
-
-CMD ["gunicorn", "--bind", "0.0.0.0:10000", "app:app"]
+CMD ["python", "bot.py"]
