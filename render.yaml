@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: clip-helper
+    runtime: docker
+    plan: free
+    healthCheckPath: /
