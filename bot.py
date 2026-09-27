@@ -632,7 +632,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎬 Отправь мне видео.\n\n"
         "Перед этим можешь открыть /start "
-        "и настроить качество, формат и другие параметры."
+        "и настроить ч качество, формат и другие параметры."
     )
 
 
