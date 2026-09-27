@@ -68,7 +68,6 @@
             color: var(--tg-theme-text-color, #ffffff);
             font-size: 14px;
             font-weight: 600;
-            cursor: pointer;
         }
 
         button.active {
@@ -76,22 +75,23 @@
             color: var(--tg-theme-button-text-color, #ffffff);
         }
 
-        .upload {
-            width: 100%;
-            padding: 17px;
-            background: var(--tg-theme-button-color, #2481cc);
-            color: var(--tg-theme-button-text-color, #ffffff);
-            font-size: 17px;
-        }
-
+        .upload,
         .continue {
             width: 100%;
             padding: 17px;
+            font-size: 17px;
+        }
+
+        .upload {
+            background: var(--tg-theme-button-color, #2481cc);
+            color: var(--tg-theme-button-text-color, #ffffff);
+        }
+
+        .continue {
+            display: none;
             margin-top: 12px;
             background: #31b55c;
             color: white;
-            font-size: 17px;
-            display: none;
         }
 
         .file-info {
@@ -140,7 +140,7 @@
     </div>
 
 
-    <!-- QUALITY -->
+    <!-- КАЧЕСТВО -->
 
     <div class="card">
 
@@ -148,18 +148,32 @@
 
         <div class="buttons">
 
-            <button onclick="setQuality(144)" id="q144">144p</button>
-            <button onclick="setQuality(360)" id="q360">360p</button>
-            <button onclick="setQuality(480)" id="q480">480p</button>
-            <button onclick="setQuality(720)" id="q720">720p</button>
-            <button onclick="setQuality(1080)" id="q1080">1080p</button>
+            <button onclick="setQuality(144)" id="q144">
+                144p
+            </button>
+
+            <button onclick="setQuality(360)" id="q360">
+                360p
+            </button>
+
+            <button onclick="setQuality(480)" id="q480">
+                480p
+            </button>
+
+            <button onclick="setQuality(720)" id="q720">
+                720p
+            </button>
+
+            <button onclick="setQuality(1080)" id="q1080">
+                1080p
+            </button>
 
         </div>
 
     </div>
 
 
-    <!-- FORMAT -->
+    <!-- ФОРМАТ -->
 
     <div class="card">
 
@@ -186,7 +200,7 @@
     </div>
 
 
-    <!-- SUBTITLES -->
+    <!-- СУБТИТРЫ -->
 
     <div class="card">
 
@@ -245,13 +259,13 @@
         </div>
 
         <div class="small">
-            Настройка будет подключена к обработке следующим этапом.
+            AI-улучшение подключим отдельно.
         </div>
 
     </div>
 
 
-    <!-- VIDEO -->
+    <!-- ВИДЕО -->
 
     <div class="card">
 
@@ -330,7 +344,7 @@
 
 
     // =========================
-    // UI
+    // ОБНОВЛЕНИЕ ПАНЕЛИ
     // =========================
 
     function updateUI() {
@@ -343,7 +357,9 @@
 
 
         const qualityButton =
-            document.getElementById("q" + settings.quality);
+            document.getElementById(
+                "q" + settings.quality
+            );
 
         if (qualityButton) {
             qualityButton.classList.add("active");
@@ -361,7 +377,6 @@
             document
                 .getElementById("formatOriginal")
                 .classList.add("active");
-
         }
 
 
@@ -401,13 +416,12 @@
             document
                 .getElementById("aiOff")
                 .classList.add("active");
-
         }
     }
 
 
     // =========================
-    // SETTINGS
+    // НАСТРОЙКИ
     // =========================
 
     function setQuality(value) {
@@ -443,7 +457,7 @@
 
 
     // =========================
-    // VIDEO
+    // ВЫБОР ВИДЕО
     // =========================
 
     function chooseVideo() {
@@ -454,23 +468,30 @@
     }
 
 
+    // =========================
+    // РАЗМЕР ФАЙЛА
+    // =========================
+
     function formatBytes(bytes) {
 
         if (bytes < 1024 * 1024) {
 
             return (
-                (bytes / 1024).toFixed(1) +
-                " KB"
+                (bytes / 1024).toFixed(1)
+                + " KB"
             );
-
         }
 
         return (
-            (bytes / (1024 * 1024)).toFixed(1) +
-            " MB"
+            (bytes / (1024 * 1024)).toFixed(1)
+            + " MB"
         );
     }
 
+
+    // =========================
+    // ВИДЕО ВЫБРАНО
+    // =========================
 
     function videoSelected() {
 
@@ -541,10 +562,10 @@
 
 
     // =========================
-    // CONTINUE
+    // ПРОДОЛЖИТЬ / ЗАГРУЗКА
     // =========================
 
-    function continueProcessing() {
+    async function continueProcessing() {
 
         if (!selectedFile) {
 
@@ -560,61 +581,156 @@
             document.getElementById("status");
 
 
+        const continueButton =
+            document.getElementById(
+                "continueButton"
+            );
+
+
+        continueButton.disabled = true;
+
+        continueButton.textContent =
+            "⏳ Загружаю...";
+
+
         status.style.display = "block";
 
-
         status.innerHTML =
-            "🚀 <b>Готово к обработке!</b><br><br>" +
+            "📤 Загружаю видео на ClipForge...";
 
-            "Видео: " +
-            selectedFile.name +
-            "<br>" +
 
-            "Качество: " +
-            settings.quality +
-            "p<br>" +
+        const formData = new FormData();
 
-            "Формат: " +
-            (
-                settings.format === "vertical"
-                    ? "9:16"
-                    : "Оригинал"
-            ) +
-            "<br>" +
 
-            "Субтитры: " +
-            settings.subtitles +
-            "<br>" +
+        formData.append(
+            "video",
+            selectedFile
+        );
 
-            "AI: " +
-            (
-                settings.ai
-                    ? "Вкл"
-                    : "Выкл"
+
+        // ID пользователя Telegram
+
+        const userId =
+            tg.initDataUnsafe &&
+            tg.initDataUnsafe.user
+                ? tg.initDataUnsafe.user.id
+                : "";
+
+
+        formData.append(
+            "chat_id",
+            userId
+        );
+
+
+        formData.append(
+            "quality",
+            settings.quality
+        );
+
+
+        formData.append(
+            "format",
+            settings.format
+        );
+
+
+        formData.append(
+            "subtitles",
+            settings.subtitles
+        );
+
+
+        formData.append(
+            "ai",
+            settings.ai
+        );
+
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/upload",
+                    {
+                        method: "POST",
+                        body: formData
+                    }
+                );
+
+
+            const result =
+                await response.json();
+
+
+            if (!result.ok) {
+
+                throw new Error(
+                    result.error ||
+                    "Ошибка загрузки"
+                );
+            }
+
+
+            status.innerHTML =
+                "⚙️ <b>Видео отправлено!</b><br><br>" +
+
+                "Сейчас ClipForge его обработает." +
+                "<br><br>" +
+
+                "📺 " +
+                settings.quality +
+                "p<br>" +
+
+                "📱 " +
+                (
+                    settings.format === "vertical"
+                        ? "9:16"
+                        : "Оригинал"
+                ) +
+                "<br>" +
+
+                "💬 " +
+                settings.subtitles +
+                "<br>" +
+
+                "🤖 AI: " +
+                (
+                    settings.ai
+                        ? "Вкл"
+                        : "Выкл"
+                );
+
+
+            continueButton.textContent =
+                "✅ Отправлено";
+
+
+            tg.showAlert(
+                "Видео отправлено на обработку!"
             );
 
 
-        tg.MainButton.text = "🚀 Обработать";
+        } catch (error) {
 
-        tg.MainButton.show();
+            console.error(error);
 
 
-        tg.MainButton.onClick(() => {
+            status.innerHTML =
+                "❌ Ошибка загрузки:<br><br>" +
+                error.message;
 
-            tg.sendData(
-                JSON.stringify({
-                    action: "process",
-                    settings: settings
-                })
-            );
 
-        });
+            continueButton.disabled = false;
 
+            continueButton.textContent =
+                "🚀 Продолжить";
+        }
     }
 
 
     // =========================
-    // START
+    // ЗАПУСК
     // =========================
 
     updateUI();
