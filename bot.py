@@ -26,6 +26,9 @@ from telegram.ext import (
     filters,
 )
 
+from faster_whisper import WhisperModel
+
+
 # =========================================================
 # CONFIG
 # =========================================================
@@ -33,41 +36,94 @@ from telegram.ext import (
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL")
 
+# Владелец
+OWNER_USERNAME = "youcoid"
+
 UPLOAD_DIR = Path("uploads")
 OUTPUT_DIR = Path("outputs")
+SUBTITLE_DIR = Path("subtitles")
+
 DATA_FILE = Path("data.json")
 
 UPLOAD_DIR.mkdir(exist_ok=True)
 OUTPUT_DIR.mkdir(exist_ok=True)
+SUBTITLE_DIR.mkdir(exist_ok=True)
 
-web = Flask(__name__, static_folder="templates")
+web = Flask(__name__)
+
+data_lock = threading.Lock()
+
+
+# =========================================================
+# WHISPER
+# =========================================================
+
+WHISPER_MODEL = None
+whisper_lock = threading.Lock()
+
+
+def get_whisper():
+
+    global WHISPER_MODEL
+
+    with whisper_lock:
+
+        if WHISPER_MODEL is None:
+
+            print("Загрузка Whisper...")
+
+            WHISPER_MODEL = WhisperModel(
+                "small",
+                device="cpu",
+                compute_type="int8"
+            )
+
+            print("Whisper загружен!")
+
+    return WHISPER_MODEL
+
 
 # =========================================================
 # DATA
 # =========================================================
 
-data_lock = threading.Lock()
-
-
 def load_data():
+
     if not DATA_FILE.exists():
+
         return {
             "users": {}
         }
 
     try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
+
+        with open(
+            DATA_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
             return json.load(f)
+
     except Exception:
+
         return {
             "users": {}
         }
 
 
 def save_data(data):
-    temp_file = Path("data.json.tmp")
 
-    with open(temp_file, "w", encoding="utf-8") as f:
+    temp = Path(
+        "data.json.tmp"
+    )
+
+    with open(
+        temp,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
         json.dump(
             data,
             f,
@@ -75,37 +131,172 @@ def save_data(data):
             indent=2
         )
 
-    temp_file.replace(DATA_FILE)
+    temp.replace(
+        DATA_FILE
+    )
 
 
-def ensure_user(user_id):
+def ensure_user(
+    user_id,
+    username=None
+):
+
     user_id = str(user_id)
 
     with data_lock:
+
         data = load_data()
 
         if user_id not in data["users"]:
+
             data["users"][user_id] = {
+                "username": username or "",
                 "premium": False,
                 "processed": 0,
                 "processing": [],
                 "history": []
             }
 
-            save_data(data)
+        else:
+
+            if username:
+
+                data["users"][user_id][
+                    "username"
+                ] = username
+
+        save_data(data)
 
         return data["users"][user_id]
 
 
-def add_processing(user_id, job_id, filename):
+# =========================================================
+# OWNER
+# =========================================================
+
+def is_owner_username(username):
+
+    if not username:
+        return False
+
+    return (
+        username.lower().lstrip("@")
+        ==
+        OWNER_USERNAME.lower()
+    )
+
+
+def is_owner_id(user_id):
+
     user_id = str(user_id)
 
     with data_lock:
+
         data = load_data()
 
-        ensure = data["users"].setdefault(
-            user_id,
+        user = data["users"].get(
+            user_id
+        )
+
+        if not user:
+            return False
+
+        return is_owner_username(
+            user.get("username")
+        )
+
+
+# =========================================================
+# ADMIN HELPERS
+# =========================================================
+
+def find_user_by_username(
+    username
+):
+
+    username = (
+        username
+        .lower()
+        .lstrip("@")
+    )
+
+    with data_lock:
+
+        data = load_data()
+
+        for user_id, user in data[
+            "users"
+        ].items():
+
+            saved_username = (
+                user.get(
+                    "username",
+                    ""
+                )
+                .lower()
+                .lstrip("@")
+            )
+
+            if saved_username == username:
+
+                return (
+                    user_id,
+                    user
+                )
+
+    return None, None
+
+
+def premium_users():
+
+    result = []
+
+    with data_lock:
+
+        data = load_data()
+
+        for user_id, user in data[
+            "users"
+        ].items():
+
+            if user.get(
+                "premium",
+                False
+            ):
+
+                result.append({
+                    "user_id": user_id,
+                    "username": user.get(
+                        "username",
+                        ""
+                    ),
+                    "processed": user.get(
+                        "processed",
+                        0
+                    )
+                })
+
+    return result
+
+
+# =========================================================
+# PROCESSING DATA
+# =========================================================
+
+def add_processing(
+    user_id,
+    job_id,
+    filename
+):
+
+    with data_lock:
+
+        data = load_data()
+
+        user = data["users"].setdefault(
+            str(user_id),
             {
+                "username": "",
                 "premium": False,
                 "processed": 0,
                 "processing": [],
@@ -113,7 +304,10 @@ def add_processing(user_id, job_id, filename):
             }
         )
 
-        ensure["processing"].append({
+        user.setdefault(
+            "processing",
+            []
+        ).append({
             "id": job_id,
             "filename": filename,
             "status": "processing"
@@ -126,33 +320,42 @@ def finish_processing(
     user_id,
     job_id,
     filename,
-    success=True
+    success
 ):
-    user_id = str(user_id)
 
     with data_lock:
+
         data = load_data()
 
-        user = data["users"].setdefault(
-            user_id,
-            {
-                "premium": False,
-                "processed": 0,
-                "processing": [],
-                "history": []
-            }
+        user = data["users"].get(
+            str(user_id)
         )
+
+        if not user:
+            return
 
         user["processing"] = [
             item
-            for item in user.get("processing", [])
+            for item in user.get(
+                "processing",
+                []
+            )
             if item.get("id") != job_id
         ]
 
         if success:
-            user["processed"] = user.get("processed", 0) + 1
 
-            user.setdefault("history", []).insert(
+            user["processed"] = (
+                user.get(
+                    "processed",
+                    0
+                ) + 1
+            )
+
+            user.setdefault(
+                "history",
+                []
+            ).insert(
                 0,
                 {
                     "id": job_id,
@@ -160,17 +363,20 @@ def finish_processing(
                 }
             )
 
-            user["history"] = user["history"][:20]
+            user["history"] = (
+                user["history"][:30]
+            )
 
         save_data(data)
 
 
 # =========================================================
-# MAIN PAGE
+# WEB
 # =========================================================
 
 @web.route("/")
 def index():
+
     return send_from_directory(
         "templates",
         "index.html"
@@ -178,35 +384,59 @@ def index():
 
 
 # =========================================================
-# USER INFO
+# USER API
 # =========================================================
 
-@web.route("/api/user", methods=["GET"])
-def get_user():
+@web.route(
+    "/api/user",
+    methods=["GET"]
+)
+def api_user():
 
     try:
-        user_id = request.args.get("user_id")
+
+        user_id = request.args.get(
+            "user_id"
+        )
 
         if not user_id:
+
             return jsonify({
                 "ok": False,
                 "error": "User ID не получен"
             }), 400
 
-        user = ensure_user(user_id)
+        user = ensure_user(
+            user_id
+        )
 
         return jsonify({
             "ok": True,
             "user_id": user_id,
-            "premium": user.get("premium", False),
-            "processed": user.get("processed", 0),
-            "processing": user.get("processing", []),
-            "history": user.get("history", [])
+            "premium": user.get(
+                "premium",
+                False
+            ),
+            "processed": user.get(
+                "processed",
+                0
+            ),
+            "processing": user.get(
+                "processing",
+                []
+            ),
+            "history": user.get(
+                "history",
+                []
+            )
         })
 
     except Exception as e:
 
-        print("USER ERROR:", e)
+        print(
+            "USER API ERROR:",
+            e
+        )
 
         return jsonify({
             "ok": False,
@@ -218,18 +448,31 @@ def get_user():
 # UPLOAD
 # =========================================================
 
-@web.route("/api/upload", methods=["POST"])
+@web.route(
+    "/api/upload",
+    methods=["POST"]
+)
 def upload_video():
 
     try:
 
-        video = request.files.get("video")
-        chat_id = request.form.get("chat_id")
+        video = request.files.get(
+            "video"
+        )
+
+        chat_id = request.form.get(
+            "chat_id"
+        )
+
+        username = request.form.get(
+            "username",
+            ""
+        )
 
         quality = int(
             request.form.get(
                 "quality",
-                720
+                1080
             )
         )
 
@@ -247,37 +490,50 @@ def upload_video():
             request.form.get(
                 "ai",
                 "false"
-            ) == "true"
+            )
+            == "true"
         )
 
         if not video:
+
             return jsonify({
                 "ok": False,
                 "error": "Видео не получено"
             }), 400
 
         if not chat_id:
+
             return jsonify({
                 "ok": False,
                 "error": "Chat ID не получен"
             }), 400
 
-        # -------------------------------------------------
-        # CHECK USER
-        # -------------------------------------------------
-
-        user = ensure_user(chat_id)
+        user = ensure_user(
+            chat_id,
+            username
+        )
 
         premium = user.get(
             "premium",
             False
         )
 
-        # -------------------------------------------------
-        # QUALITY LIMITS
-        # -------------------------------------------------
+        # Владелец всегда Premium
+        if is_owner_username(username):
 
-        allowed_normal = [
+            premium = True
+
+            with data_lock:
+
+                data = load_data()
+
+                data["users"][
+                    str(chat_id)
+                ]["premium"] = True
+
+                save_data(data)
+
+        normal_quality = [
             144,
             360,
             480,
@@ -285,7 +541,7 @@ def upload_video():
             1080
         ]
 
-        allowed_premium = [
+        premium_quality = [
             144,
             360,
             480,
@@ -297,22 +553,19 @@ def upload_video():
 
         if premium:
 
-            if quality not in allowed_premium:
-                quality = 720
+            if quality not in premium_quality:
+
+                quality = 1080
 
         else:
 
-            if quality not in allowed_normal:
-                quality = 720
+            if quality not in normal_quality:
 
-            # Нельзя обычному пользователю
-            # выбрать 2K/4K
-            if quality > 1080:
                 quality = 1080
 
-        # -------------------------------------------------
-        # SAVE VIDEO
-        # -------------------------------------------------
+            if quality > 1080:
+
+                quality = 1080
 
         job_id = uuid.uuid4().hex
 
@@ -326,30 +579,29 @@ def upload_video():
             f"{job_id}_out.mp4"
         )
 
-        original_filename = (
+        filename = (
             video.filename
             or "video.mp4"
         )
 
-        video.save(input_path)
+        video.save(
+            input_path
+        )
 
         if not input_path.exists():
+
             raise Exception(
-                "Не удалось сохранить видео"
+                "Видео не сохранилось"
             )
 
         add_processing(
             chat_id,
             job_id,
-            original_filename
+            filename
         )
 
-        # -------------------------------------------------
-        # START PROCESSING
-        # -------------------------------------------------
-
         threading.Thread(
-            target=process_and_send,
+            target=process_video,
             args=(
                 input_path,
                 output_path,
@@ -359,7 +611,7 @@ def upload_video():
                 subtitles,
                 ai,
                 job_id,
-                original_filename
+                filename
             ),
             daemon=True
         ).start()
@@ -367,14 +619,18 @@ def upload_video():
         return jsonify({
             "ok": True,
             "job_id": job_id,
-            "message": "Видео отправлено на обработку"
+            "message": (
+                "Видео отправлено "
+                "на обработку"
+            )
         })
 
     except Exception as e:
 
-        print("\n===== UPLOAD ERROR =====")
-        print(e)
-        print("========================\n")
+        print(
+            "UPLOAD ERROR:",
+            e
+        )
 
         return jsonify({
             "ok": False,
@@ -383,10 +639,196 @@ def upload_video():
 
 
 # =========================================================
-# PROCESS VIDEO
+# SUBTITLES
 # =========================================================
 
-def process_and_send(
+def format_timestamp(seconds):
+
+    milliseconds = int(
+        (seconds % 1) * 1000
+    )
+
+    total = int(seconds)
+
+    hours = total // 3600
+
+    minutes = (
+        total % 3600
+    ) // 60
+
+    secs = total % 60
+
+    return (
+        f"{hours:02d}:"
+        f"{minutes:02d}:"
+        f"{secs:02d},"
+        f"{milliseconds:03d}"
+    )
+
+
+def create_subtitles(
+    input_path,
+    subtitle_path,
+    style
+):
+
+    print(
+        "Запускаю Whisper..."
+    )
+
+    model = get_whisper()
+
+    segments, info = model.transcribe(
+        str(input_path),
+        beam_size=5,
+        vad_filter=True
+    )
+
+    segments = list(
+        segments
+    )
+
+    with open(
+        subtitle_path,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        f.write(
+            "[Script Info]\n"
+        )
+
+        f.write(
+            "ScriptType: v4.00+\n"
+        )
+
+        f.write(
+            "PlayResX: 1080\n"
+        )
+
+        f.write(
+            "PlayResY: 1920\n\n"
+        )
+
+        f.write(
+            "[V4+ Styles]\n"
+        )
+
+        f.write(
+            "Format: Name, Fontname, "
+            "Fontsize, PrimaryColour, "
+            "SecondaryColour, "
+            "OutlineColour, BackColour, "
+            "Bold, Italic, Underline, "
+            "StrikeOut, ScaleX, ScaleY, "
+            "Spacing, Angle, BorderStyle, "
+            "Outline, Shadow, Alignment, "
+            "MarginL, MarginR, MarginV, "
+            "Encoding\n"
+        )
+
+        if style == "bold":
+
+            bold = -1
+            size = 58
+
+        else:
+
+            bold = 0
+            size = 52
+
+        f.write(
+            f"Style: Default,"
+            f"Arial,"
+            f"{size},"
+            f"&H00FFFFFF,"
+            f"&H000000FF,"
+            f"&H00000000,"
+            f"&H80000000,"
+            f"{bold},"
+            f"0,0,0,100,100,0,0,1,3,1,2,"
+            f"40,40,120,1\n\n"
+        )
+
+        f.write(
+            "[Events]\n"
+        )
+
+        f.write(
+            "Format: Layer, Start, End, "
+            "Style, Name, MarginL, "
+            "MarginR, MarginV, Effect, Text\n"
+        )
+
+        for segment in segments:
+
+            start = (
+                segment.start
+            )
+
+            end = (
+                segment.end
+            )
+
+            text = (
+                segment.text
+                .strip()
+                .replace(
+                    "\n",
+                    " "
+                )
+            )
+
+            if not text:
+                continue
+
+            start_ass = (
+                format_timestamp(
+                    start
+                )
+                .replace(",", ".")
+            )
+
+            end_ass = (
+                format_timestamp(
+                    end
+                )
+                .replace(",", ".")
+            )
+
+            # ASS uses H:MM:SS.CC
+            start_ass = (
+                start_ass[:8]
+                + "."
+                + start_ass[9:11]
+            )
+
+            end_ass = (
+                end_ass[:8]
+                + "."
+                + end_ass[9:11]
+            )
+
+            f.write(
+                f"Dialogue: 0,"
+                f"{start_ass},"
+                f"{end_ass},"
+                f"Default,"
+                f",0,0,0,,"
+                f"{text}\n"
+            )
+
+    print(
+        "Субтитры созданы:",
+        subtitle_path
+    )
+
+
+# =========================================================
+# PROCESS
+# =========================================================
+
+def process_video(
     input_path,
     output_path,
     chat_id,
@@ -395,18 +837,44 @@ def process_and_send(
     subtitles,
     ai,
     job_id,
-    original_filename
+    filename
 ):
 
     success = False
 
+    subtitle_path = (
+        SUBTITLE_DIR /
+        f"{job_id}.ass"
+    )
+
     try:
 
-        filters_list = []
+        # ---------------------------------------------
+        # SUBTITLES
+        # ---------------------------------------------
 
-        # -------------------------------------------------
-        # FORMAT
-        # -------------------------------------------------
+        subtitle_filter = None
+
+        if subtitles in [
+            "normal",
+            "bold"
+        ]:
+
+            create_subtitles(
+                input_path,
+                subtitle_path,
+                subtitles
+            )
+
+            subtitle_filter = (
+                f"ass={subtitle_path}"
+            )
+
+        # ---------------------------------------------
+        # VIDEO SCALE
+        # ---------------------------------------------
+
+        filters = []
 
         if video_format == "vertical":
 
@@ -414,43 +882,53 @@ def process_and_send(
                 quality * 9 / 16
             )
 
-            width -= width % 2
+            width -= (
+                width % 2
+            )
 
-            filters_list.append(
+            filters.append(
                 f"scale={width}:{quality}:"
                 "force_original_aspect_ratio=decrease"
             )
 
-            filters_list.append(
+            filters.append(
                 f"pad={width}:{quality}:"
                 "(ow-iw)/2:(oh-ih)/2"
             )
 
         else:
 
-            filters_list.append(
+            filters.append(
                 f"scale=-2:{quality}"
             )
 
-        # -------------------------------------------------
-        # AI ENHANCEMENT
-        # -------------------------------------------------
+        # ---------------------------------------------
+        # QUALITY
+        # ---------------------------------------------
 
         if ai:
 
-            # Пока это улучшение через FFmpeg.
-            # Настоящий AI upscale будет отдельным модулем.
-            filters_list.append(
-                "unsharp=5:5:0.8:5:5:0.0"
+            filters.append(
+                "hqdn3d=1.2:1.2:6:6"
+            )
+
+            filters.append(
+                "unsharp=5:5:0.65:5:5:0.0"
+            )
+
+        if subtitle_filter:
+
+            filters.append(
+                subtitle_filter
             )
 
         filter_string = ",".join(
-            filters_list
+            filters
         )
 
-        # -------------------------------------------------
-        # FFMPEG
-        # -------------------------------------------------
+        # ---------------------------------------------
+        # ENCODE
+        # ---------------------------------------------
 
         command = [
             "ffmpeg",
@@ -469,10 +947,10 @@ def process_and_send(
             "libx264",
 
             "-preset",
-            "veryfast",
+            "slow",
 
             "-crf",
-            "20",
+            "16",
 
             "-pix_fmt",
             "yuv420p",
@@ -481,13 +959,18 @@ def process_and_send(
             "aac",
 
             "-b:a",
-            "128k",
+            "192k",
 
             "-movflags",
             "+faststart",
 
             str(output_path)
         ]
+
+        print(
+            "FFmpeg:",
+            " ".join(command)
+        )
 
         result = subprocess.run(
             command,
@@ -499,91 +982,97 @@ def process_and_send(
         if result.returncode != 0:
 
             raise Exception(
-                result.stderr[-3000:]
+                result.stderr[-5000:]
             )
 
         if not output_path.exists():
 
             raise Exception(
-                "FFmpeg не создал видео"
+                "FFmpeg не создал файл"
             )
 
-        # -------------------------------------------------
-        # SEND TO TELEGRAM
-        # -------------------------------------------------
+        # ---------------------------------------------
+        # SEND
+        # ---------------------------------------------
 
         asyncio.run(
-            send_video_to_user(
+            send_video(
                 chat_id,
                 output_path,
-                quality
+                quality,
+                subtitles
             )
         )
 
         success = True
 
-        print(
-            f"Видео {job_id} успешно обработано"
-        )
-
     except Exception as e:
 
-        print("\n===== PROCESS ERROR =====")
+        print(
+            "\nPROCESS ERROR:"
+        )
+
         print(e)
-        print("=========================\n")
+
+        print(
+            "\n"
+        )
 
         try:
 
             asyncio.run(
-                send_error_to_user(
-                    chat_id,
-                    str(e)
+                send_error(
+                    chat_id
                 )
             )
 
-        except Exception as send_error:
-
-            print(
-                "SEND ERROR:",
-                send_error
-            )
+        except Exception:
+            pass
 
     finally:
 
         finish_processing(
             chat_id,
             job_id,
-            original_filename,
+            filename,
             success
         )
 
-        try:
-            input_path.unlink(
-                missing_ok=True
-            )
-        except Exception:
-            pass
+        for path in [
+            input_path,
+            output_path,
+            subtitle_path
+        ]:
 
-        try:
-            output_path.unlink(
-                missing_ok=True
-            )
-        except Exception:
-            pass
+            try:
+
+                path.unlink(
+                    missing_ok=True
+                )
+
+            except Exception:
+                pass
 
 
 # =========================================================
-# SEND VIDEO
+# TELEGRAM SEND
 # =========================================================
 
-async def send_video_to_user(
+async def send_video(
     chat_id,
     output_path,
-    quality
+    quality,
+    subtitles
 ):
 
     bot = Bot(
         BOT_TOKEN
+    )
+
+    subtitle_text = (
+        " + субтитры"
+        if subtitles != "off"
+        else ""
     )
 
     with open(
@@ -596,19 +1085,18 @@ async def send_video_to_user(
             video=video,
             supports_streaming=True,
             caption=(
-                f"✅ ClipForge готов!\n"
+                "✅ ClipForge готов!\n\n"
                 f"Качество: {quality}p"
-            )
+                f"{subtitle_text}"
+            ),
+            read_timeout=300,
+            write_timeout=300,
+            connect_timeout=30
         )
 
 
-# =========================================================
-# SEND ERROR
-# =========================================================
-
-async def send_error_to_user(
-    chat_id,
-    error
+async def send_error(
+    chat_id
 ):
 
     bot = Bot(
@@ -618,7 +1106,8 @@ async def send_error_to_user(
     await bot.send_message(
         chat_id=int(chat_id),
         text=(
-            "❌ Не удалось обработать видео.\n\n"
+            "❌ Во время обработки "
+            "произошла ошибка.\n"
             "Попробуй ещё раз."
         )
     )
@@ -632,16 +1121,22 @@ async def send_error_to_user(
     "/api/create-premium-invoice",
     methods=["POST"]
 )
-def create_premium_invoice():
+def create_invoice():
 
     try:
 
-        body = request.get_json(
-            silent=True
-        ) or {}
+        body = (
+            request.get_json(
+                silent=True
+            )
+            or {}
+        )
 
-        user_id = body.get(
-            "user_id"
+        user_id = str(
+            body.get(
+                "user_id",
+                ""
+            )
         )
 
         if not user_id:
@@ -662,56 +1157,51 @@ def create_premium_invoice():
 
             return jsonify({
                 "ok": False,
-                "error": "Premium уже активирован"
+                "error": "Premium уже активен"
             }), 400
 
-        async def create_invoice():
+        async def make():
 
             bot = Bot(
                 BOT_TOKEN
             )
 
             payload = (
-                f"premium:{user_id}:"
+                f"premium:"
+                f"{user_id}:"
                 f"{uuid.uuid4().hex}"
             )
 
-            prices = [
-                LabeledPrice(
-                    label="ClipForge Premium",
-                    amount=50
-                )
-            ]
-
-            invoice_link = (
-                await bot.create_invoice_link(
-                    title="ClipForge Premium",
-                    description=(
-                        "Premium доступ к 2K и 4K "
-                        "обработке видео."
-                    ),
-                    payload=payload,
-                    currency="XTR",
-                    prices=prices
-                )
+            return await bot.create_invoice_link(
+                title="ClipForge Premium",
+                description=(
+                    "2K и 4K обработка видео"
+                ),
+                payload=payload,
+                currency="XTR",
+                prices=[
+                    LabeledPrice(
+                        "Premium",
+                        50
+                    )
+                ]
             )
 
-            return invoice_link
-
-        invoice_link = asyncio.run(
-            create_invoice()
+        invoice = asyncio.run(
+            make()
         )
 
         return jsonify({
             "ok": True,
-            "invoice_url": invoice_link
+            "invoice_url": invoice
         })
 
     except Exception as e:
 
-        print("\n===== INVOICE ERROR =====")
-        print(e)
-        print("=========================\n")
+        print(
+            "INVOICE ERROR:",
+            e
+        )
 
         return jsonify({
             "ok": False,
@@ -720,7 +1210,7 @@ def create_premium_invoice():
 
 
 # =========================================================
-# TELEGRAM PAYMENT
+# PAYMENT CHECK
 # =========================================================
 
 async def pre_checkout(
@@ -728,11 +1218,15 @@ async def pre_checkout(
     context: ContextTypes.DEFAULT_TYPE
 ):
 
-    query = update.pre_checkout_query
+    query = (
+        update.pre_checkout_query
+    )
 
     try:
 
-        payload = query.invoice_payload
+        payload = (
+            query.invoice_payload
+        )
 
         if not payload.startswith(
             "premium:"
@@ -741,7 +1235,7 @@ async def pre_checkout(
             await query.answer(
                 ok=False,
                 error_message=(
-                    "Неизвестный платёж."
+                    "Неверный платёж."
                 )
             )
 
@@ -749,31 +1243,24 @@ async def pre_checkout(
 
         parts = payload.split(":")
 
-        if len(parts) < 2:
-
-            await query.answer(
-                ok=False,
-                error_message=(
-                    "Некорректный платёж."
-                )
-            )
-
-            return
-
         payload_user_id = str(
             parts[1]
         )
 
-        telegram_user_id = str(
+        actual_user_id = str(
             query.from_user.id
         )
 
-        if payload_user_id != telegram_user_id:
+        if (
+            payload_user_id
+            !=
+            actual_user_id
+        ):
 
             await query.answer(
                 ok=False,
                 error_message=(
-                    "Этот платёж создан "
+                    "Платёж создан "
                     "для другого пользователя."
                 )
             )
@@ -785,7 +1272,7 @@ async def pre_checkout(
             await query.answer(
                 ok=False,
                 error_message=(
-                    "Некорректная валюта."
+                    "Неверная валюта."
                 )
             )
 
@@ -796,7 +1283,7 @@ async def pre_checkout(
             await query.answer(
                 ok=False,
                 error_message=(
-                    "Некорректная сумма."
+                    "Неверная сумма."
                 )
             )
 
@@ -821,6 +1308,10 @@ async def pre_checkout(
         )
 
 
+# =========================================================
+# SUCCESS PAYMENT
+# =========================================================
+
 async def successful_payment(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
@@ -838,6 +1329,7 @@ async def successful_payment(
         payment.currency != "XTR"
         or payment.total_amount != 50
     ):
+
         return
 
     with data_lock:
@@ -847,6 +1339,7 @@ async def successful_payment(
         user = data["users"].setdefault(
             user_id,
             {
+                "username": "",
                 "premium": False,
                 "processed": 0,
                 "processing": [],
@@ -859,13 +1352,192 @@ async def successful_payment(
         save_data(data)
 
     await update.message.reply_text(
-        "⭐ Premium успешно активирован!\n\n"
-        "Теперь тебе доступны:\n"
-        "• 2K\n"
-        "• 4K\n"
-        "• Premium-режим\n\n"
-        "Приятного использования 🔥"
+        "⭐ Premium активирован!\n\n"
+        "Теперь тебе доступны 2K и 4K."
     )
+
+
+# =========================================================
+# ADMIN API
+# =========================================================
+
+def check_admin(
+    user_id,
+    username
+):
+
+    return is_owner_username(
+        username
+    ) or is_owner_id(
+        user_id
+    )
+
+
+@web.route(
+    "/api/admin",
+    methods=["GET"]
+)
+def admin_data():
+
+    try:
+
+        user_id = request.args.get(
+            "user_id"
+        )
+
+        username = request.args.get(
+            "username",
+            ""
+        )
+
+        if not check_admin(
+            user_id,
+            username
+        ):
+
+            return jsonify({
+                "ok": False,
+                "error": "Нет доступа"
+            }), 403
+
+        with data_lock:
+
+            data = load_data()
+
+            users = data.get(
+                "users",
+                {}
+            )
+
+            total_users = len(
+                users
+            )
+
+            total_processed = sum(
+                u.get(
+                    "processed",
+                    0
+                )
+                for u in users.values()
+            )
+
+        return jsonify({
+            "ok": True,
+            "users": total_users,
+            "processed": total_processed,
+            "premium": premium_users()
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 500
+
+
+@web.route(
+    "/api/admin/premium",
+    methods=["POST"]
+)
+def admin_premium():
+
+    try:
+
+        body = (
+            request.get_json(
+                silent=True
+            )
+            or {}
+        )
+
+        admin_id = str(
+            body.get(
+                "admin_id",
+                ""
+            )
+        )
+
+        admin_username = body.get(
+            "admin_username",
+            ""
+        )
+
+        target_username = (
+            body.get(
+                "username",
+                ""
+            )
+            .lstrip("@")
+            .strip()
+        )
+
+        action = body.get(
+            "action"
+        )
+
+        if not check_admin(
+            admin_id,
+            admin_username
+        ):
+
+            return jsonify({
+                "ok": False,
+                "error": "Нет доступа"
+            }), 403
+
+        target_id, target = (
+            find_user_by_username(
+                target_username
+            )
+        )
+
+        if not target_id:
+
+            return jsonify({
+                "ok": False,
+                "error": (
+                    "Пользователь пока "
+                    "не запускал бота."
+                )
+            }), 404
+
+        with data_lock:
+
+            data = load_data()
+
+            if action == "grant":
+
+                data["users"][
+                    target_id
+                ]["premium"] = True
+
+            elif action == "remove":
+
+                data["users"][
+                    target_id
+                ]["premium"] = False
+
+            else:
+
+                return jsonify({
+                    "ok": False,
+                    "error": "Неизвестное действие"
+                }), 400
+
+            save_data(data)
+
+        return jsonify({
+            "ok": True,
+            "message": "Готово"
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "ok": False,
+            "error": str(e)
+        }), 500
 
 
 # =========================================================
@@ -877,18 +1549,39 @@ async def start(
     context: ContextTypes.DEFAULT_TYPE
 ):
 
-    user_id = str(
-        update.effective_user.id
+    user = (
+        update.effective_user
+    )
+
+    username = (
+        user.username
+        or ""
     )
 
     ensure_user(
-        user_id
+        user.id,
+        username
     )
+
+    # Владелец автоматически Premium
+    if is_owner_username(
+        username
+    ):
+
+        with data_lock:
+
+            data = load_data()
+
+            data["users"][
+                str(user.id)
+            ]["premium"] = True
+
+            save_data(data)
 
     await update.message.reply_text(
         "🎬 ClipForge\n\n"
         "Открой Mini App через кнопку "
-        "ClipForge в меню Telegram."
+        "ClipForge."
     )
 
 
@@ -923,7 +1616,7 @@ async def setup_bot(
 
 
 # =========================================================
-# FLASK
+# WEB SERVER
 # =========================================================
 
 def run_web():
@@ -961,13 +1654,11 @@ def main():
             "WEBAPP_URL не найден"
         )
 
-    # Flask
     threading.Thread(
         target=run_web,
         daemon=True
     ).start()
 
-    # Telegram bot
     application = (
         Application.builder()
         .token(BOT_TOKEN)
@@ -982,7 +1673,6 @@ def main():
         )
     )
 
-    # ⭐ Telegram Stars
     application.add_handler(
         PreCheckoutQueryHandler(
             pre_checkout
