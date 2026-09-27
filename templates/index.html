@@ -1,1 +1,1991 @@
+<!DOCTYPE html>
+<html lang="ru">
 
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    >
+
+    <title>ClipForge</title>
+
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+
+            background: #0e0e10;
+            color: #ffffff;
+
+            font-family:
+                -apple-system,
+                BlinkMacSystemFont,
+                "Segoe UI",
+                sans-serif;
+        }
+
+        .app {
+            max-width: 600px;
+            margin: 0 auto;
+
+            padding:
+                20px
+                16px
+                40px;
+        }
+
+        .header {
+            margin-bottom: 22px;
+        }
+
+        .title {
+            font-size: 28px;
+            font-weight: 800;
+        }
+
+        .subtitle {
+            color: #8e8e93;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+
+        .section {
+            margin-top: 18px;
+        }
+
+        .section-title {
+            font-size: 13px;
+            color: #8e8e93;
+
+            margin:
+                0
+                0
+                8px
+                4px;
+
+            text-transform: uppercase;
+        }
+
+        .card {
+            background: #19191d;
+            border-radius: 16px;
+
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+
+        .menu-card {
+            display: flex;
+            align-items: center;
+
+            gap: 13px;
+
+            cursor: pointer;
+        }
+
+        .menu-card:active {
+            transform: scale(0.98);
+        }
+
+        .icon {
+            width: 42px;
+            height: 42px;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 12px;
+
+            background: #242429;
+
+            font-size: 21px;
+        }
+
+        .menu-text {
+            flex: 1;
+        }
+
+        .menu-title {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .menu-description {
+            margin-top: 3px;
+
+            color: #8e8e93;
+            font-size: 13px;
+        }
+
+        .arrow {
+            color: #77777d;
+            font-size: 20px;
+        }
+
+        button {
+            border: none;
+            outline: none;
+
+            width: 100%;
+
+            padding: 15px;
+
+            border-radius: 14px;
+
+            background: #2aabee;
+            color: white;
+
+            font-size: 16px;
+            font-weight: 700;
+
+            cursor: pointer;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .secondary {
+            background: #252529;
+        }
+
+        .premium-button {
+            background: #e7b923;
+            color: #151515;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .screen {
+            animation: fade .15s ease;
+        }
+
+        @keyframes fade {
+            from {
+                opacity: 0;
+                transform: translateY(4px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .back {
+            color: #2aabee;
+
+            font-size: 15px;
+            font-weight: 600;
+
+            margin-bottom: 18px;
+
+            cursor: pointer;
+        }
+
+        .upload-box {
+            border: 2px dashed #333338;
+
+            border-radius: 16px;
+
+            padding: 28px 16px;
+
+            text-align: center;
+
+            cursor: pointer;
+
+            background: #151518;
+        }
+
+        .upload-icon {
+            font-size: 42px;
+            margin-bottom: 8px;
+        }
+
+        .upload-title {
+            font-weight: 700;
+            font-size: 17px;
+        }
+
+        .upload-subtitle {
+            color: #85858b;
+            margin-top: 5px;
+            font-size: 13px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .file-name {
+            margin-top: 12px;
+
+            color: #2aabee;
+
+            font-size: 14px;
+            word-break: break-word;
+        }
+
+        .option-grid {
+            display: grid;
+
+            grid-template-columns:
+                repeat(3, 1fr);
+
+            gap: 8px;
+        }
+
+        .option {
+            background: #19191d;
+
+            border: 1px solid #29292e;
+
+            padding: 13px 8px;
+
+            border-radius: 12px;
+
+            text-align: center;
+
+            cursor: pointer;
+
+            font-size: 14px;
+        }
+
+        .option.active {
+            background: #2aabee;
+            border-color: #2aabee;
+        }
+
+        .option.locked {
+            opacity: 0.45;
+        }
+
+        .status {
+            margin-top: 12px;
+
+            padding: 12px;
+
+            border-radius: 12px;
+
+            background: #19191d;
+
+            color: #b8b8bd;
+
+            font-size: 14px;
+
+            text-align: center;
+        }
+
+        .profile-row {
+            display: flex;
+
+            justify-content: space-between;
+
+            padding: 13px 0;
+
+            border-bottom:
+                1px solid #29292e;
+        }
+
+        .profile-row:last-child {
+            border-bottom: none;
+        }
+
+        .profile-label {
+            color: #8e8e93;
+        }
+
+        .profile-value {
+            font-weight: 700;
+        }
+
+        .premium-card {
+            background:
+                linear-gradient(
+                    135deg,
+                    #302812,
+                    #19191d
+                );
+
+            border:
+                1px solid #69551b;
+        }
+
+        .premium-title {
+            font-size: 24px;
+            font-weight: 800;
+        }
+
+        .premium-price {
+            margin-top: 8px;
+
+            font-size: 18px;
+            font-weight: 700;
+
+            color: #e7b923;
+        }
+
+        .premium-list {
+            margin:
+                18px
+                0
+                20px;
+
+            padding-left: 20px;
+
+            color: #d0d0d4;
+        }
+
+        .video-item {
+            display: flex;
+
+            align-items: center;
+
+            gap: 12px;
+        }
+
+        .video-icon {
+            font-size: 26px;
+        }
+
+        .video-info {
+            flex: 1;
+
+            min-width: 0;
+        }
+
+        .video-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+
+            font-weight: 600;
+        }
+
+        .video-status {
+            margin-top: 4px;
+
+            color: #8e8e93;
+
+            font-size: 12px;
+        }
+
+        .empty {
+            text-align: center;
+
+            padding: 30px 10px;
+
+            color: #77777d;
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+<div class="app">
+
+    <!-- ================================================= -->
+    <!-- HOME -->
+    <!-- ================================================= -->
+
+    <div
+        id="homeScreen"
+        class="screen"
+    >
+
+        <div class="header">
+
+            <div class="title">
+                🎬 ClipForge
+            </div>
+
+            <div class="subtitle">
+                Обработка видео прямо в Telegram
+            </div>
+
+        </div>
+
+
+        <div
+            class="card menu-card"
+            onclick="openCreate()"
+        >
+
+            <div class="icon">
+                🎬
+            </div>
+
+            <div class="menu-text">
+
+                <div class="menu-title">
+                    Создать обработку
+                </div>
+
+                <div class="menu-description">
+                    Загрузить видео
+                </div>
+
+            </div>
+
+            <div class="arrow">
+                ›
+            </div>
+
+        </div>
+
+
+        <div
+            class="card menu-card"
+            onclick="openProcessing()"
+        >
+
+            <div class="icon">
+                ⏳
+            </div>
+
+            <div class="menu-text">
+
+                <div class="menu-title">
+                    Видео на обработке
+                </div>
+
+                <div class="menu-description">
+                    Текущие задачи
+                </div>
+
+            </div>
+
+            <div class="arrow">
+                ›
+            </div>
+
+        </div>
+
+
+        <div
+            class="card menu-card"
+            onclick="openHistory()"
+        >
+
+            <div class="icon">
+                ✅
+            </div>
+
+            <div class="menu-text">
+
+                <div class="menu-title">
+                    Обработанные видео
+                </div>
+
+                <div class="menu-description">
+                    История обработок
+                </div>
+
+            </div>
+
+            <div class="arrow">
+                ›
+            </div>
+
+        </div>
+
+
+        <div
+            class="card menu-card"
+            onclick="openProfile()"
+        >
+
+            <div class="icon">
+                👤
+            </div>
+
+            <div class="menu-text">
+
+                <div class="menu-title">
+                    Профиль
+                </div>
+
+                <div class="menu-description">
+                    Статистика и аккаунт
+                </div>
+
+            </div>
+
+            <div class="arrow">
+                ›
+            </div>
+
+        </div>
+
+
+        <div
+            class="card menu-card premium-card"
+            onclick="openPremium()"
+        >
+
+            <div class="icon">
+                ⭐
+            </div>
+
+            <div class="menu-text">
+
+                <div class="menu-title">
+                    Premium
+                </div>
+
+                <div
+                    id="premiumHomeText"
+                    class="menu-description"
+                >
+                    2K и 4K качество
+                </div>
+
+            </div>
+
+            <div class="arrow">
+                ›
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- CREATE -->
+    <!-- ================================================= -->
+
+    <div
+        id="createScreen"
+        class="screen hidden"
+    >
+
+        <div
+            class="back"
+            onclick="showScreen('homeScreen')"
+        >
+            ← Назад
+        </div>
+
+        <div class="title">
+            🎬 Обработка
+        </div>
+
+
+        <div class="section">
+
+            <label
+                class="upload-box"
+                for="videoInput"
+            >
+
+                <div class="upload-icon">
+                    📁
+                </div>
+
+                <div class="upload-title">
+                    Выбрать видео
+                </div>
+
+                <div class="upload-subtitle">
+                    Нажми, чтобы загрузить файл
+                </div>
+
+                <div
+                    id="fileName"
+                    class="file-name"
+                ></div>
+
+            </label>
+
+            <input
+                id="videoInput"
+                type="file"
+                accept="video/*"
+            >
+
+        </div>
+
+
+        <div class="section">
+
+            <div class="section-title">
+                Качество
+            </div>
+
+            <div class="option-grid">
+
+                <div
+                    class="option"
+                    data-quality="144"
+                    onclick="selectQuality(144, this)"
+                >
+                    144p
+                </div>
+
+                <div
+                    class="option"
+                    data-quality="360"
+                    onclick="selectQuality(360, this)"
+                >
+                    360p
+                </div>
+
+                <div
+                    class="option"
+                    data-quality="480"
+                    onclick="selectQuality(480, this)"
+                >
+                    480p
+                </div>
+
+                <div
+                    class="option"
+                    data-quality="720"
+                    onclick="selectQuality(720, this)"
+                >
+                    720p
+                </div>
+
+                <div
+                    class="option active"
+                    data-quality="1080"
+                    onclick="selectQuality(1080, this)"
+                >
+                    1080p
+                </div>
+
+                <div
+                    class="option premium-quality"
+                    data-quality="1440"
+                    onclick="selectQuality(1440, this)"
+                >
+                    ⭐ 2K
+                </div>
+
+                <div
+                    class="option premium-quality"
+                    data-quality="2160"
+                    onclick="selectQuality(2160, this)"
+                >
+                    ⭐ 4K
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="section">
+
+            <div class="section-title">
+                Формат
+            </div>
+
+            <div class="option-grid">
+
+                <div
+                    id="verticalOption"
+                    class="option active"
+                    onclick="selectFormat('vertical', this)"
+                >
+                    9:16
+                </div>
+
+                <div
+                    class="option"
+                    onclick="selectFormat('original', this)"
+                >
+                    Оригинал
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="section">
+
+            <div class="section-title">
+                Субтитры
+            </div>
+
+            <div class="option-grid">
+
+                <div
+                    class="option active"
+                    onclick="selectSubtitles('off', this)"
+                >
+                    Выкл
+                </div>
+
+                <div
+                    class="option"
+                    onclick="selectSubtitles('normal', this)"
+                >
+                    Обычные
+                </div>
+
+                <div
+                    class="option"
+                    onclick="selectSubtitles('bold', this)"
+                >
+                    Жирные
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div class="section">
+
+            <div class="section-title">
+                Дополнительно
+            </div>
+
+            <div
+                id="aiOption"
+                class="option"
+                onclick="toggleAI(this)"
+            >
+                ✨ AI улучшение: ВЫКЛ
+            </div>
+
+        </div>
+
+
+        <div class="section">
+
+            <button
+                onclick="continueProcessing()"
+            >
+                🚀 Обработать видео
+            </button>
+
+        </div>
+
+
+        <div
+            id="uploadStatus"
+            class="status hidden"
+        ></div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- PROCESSING -->
+    <!-- ================================================= -->
+
+    <div
+        id="processingScreen"
+        class="screen hidden"
+    >
+
+        <div
+            class="back"
+            onclick="showScreen('homeScreen')"
+        >
+            ← Назад
+        </div>
+
+        <div class="title">
+            ⏳ Видео на обработке
+        </div>
+
+        <div
+            id="processingList"
+            class="section"
+        ></div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- HISTORY -->
+    <!-- ================================================= -->
+
+    <div
+        id="historyScreen"
+        class="screen hidden"
+    >
+
+        <div
+            class="back"
+            onclick="showScreen('homeScreen')"
+        >
+            ← Назад
+        </div>
+
+        <div class="title">
+            ✅ Обработанные видео
+        </div>
+
+        <div
+            id="historyList"
+            class="section"
+        ></div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- PROFILE -->
+    <!-- ================================================= -->
+
+    <div
+        id="profileScreen"
+        class="screen hidden"
+    >
+
+        <div
+            class="back"
+            onclick="showScreen('homeScreen')"
+        >
+            ← Назад
+        </div>
+
+        <div class="title">
+            👤 Профиль
+        </div>
+
+
+        <div class="card section">
+
+            <div class="profile-row">
+
+                <div class="profile-label">
+                    Telegram ID
+                </div>
+
+                <div
+                    id="profileId"
+                    class="profile-value"
+                >
+                    —
+                </div>
+
+            </div>
+
+
+            <div class="profile-row">
+
+                <div class="profile-label">
+                    Обработано видео
+                </div>
+
+                <div
+                    id="profileProcessed"
+                    class="profile-value"
+                >
+                    0
+                </div>
+
+            </div>
+
+
+            <div class="profile-row">
+
+                <div class="profile-label">
+                    Статус
+                </div>
+
+                <div
+                    id="profilePremium"
+                    class="profile-value"
+                >
+                    Обычный
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ================================================= -->
+    <!-- PREMIUM -->
+    <!-- ================================================= -->
+
+    <div
+        id="premiumScreen"
+        class="screen hidden"
+    >
+
+        <div
+            class="back"
+            onclick="showScreen('homeScreen')"
+        >
+            ← Назад
+        </div>
+
+
+        <div class="card premium-card">
+
+            <div class="premium-title">
+                ⭐ ClipForge Premium
+            </div>
+
+            <div class="premium-price">
+                50 Telegram Stars
+            </div>
+
+
+            <ul class="premium-list">
+
+                <li>
+                    Обработка в 2K
+                </li>
+
+                <li>
+                    Обработка в 4K
+                </li>
+
+                <li>
+                    Premium-режим
+                </li>
+
+                <li>
+                    Доступ к дополнительным функциям
+                </li>
+
+            </ul>
+
+
+            <div
+                id="premiumStatus"
+                class="status"
+            >
+                Premium ещё не активирован
+            </div>
+
+
+            <div
+                style="height: 12px"
+            ></div>
+
+
+            <button
+                id="buyPremiumButton"
+                class="premium-button"
+                onclick="buyPremium()"
+            >
+                ⭐ Купить Premium за 50
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+    // =====================================================
+    // TELEGRAM
+    // =====================================================
+
+    const tg =
+        window.Telegram &&
+        window.Telegram.WebApp
+            ? window.Telegram.WebApp
+            : null;
+
+    if (tg) {
+        tg.ready();
+        tg.expand();
+    }
+
+
+    // =====================================================
+    // USER
+    // =====================================================
+
+    let userId = null;
+
+    if (
+        tg &&
+        tg.initDataUnsafe &&
+        tg.initDataUnsafe.user
+    ) {
+
+        userId =
+            tg.initDataUnsafe.user.id
+                .toString();
+
+    }
+
+
+    // =====================================================
+    // SETTINGS
+    // =====================================================
+
+    let selectedQuality = 1080;
+
+    let selectedFormat =
+        "vertical";
+
+    let selectedSubtitles =
+        "off";
+
+    let aiEnabled = false;
+
+    let selectedFile = null;
+
+
+    // =====================================================
+    // SCREEN
+    // =====================================================
+
+    function showScreen(id) {
+
+        document
+            .querySelectorAll(".screen")
+            .forEach(screen => {
+
+                screen.classList.add(
+                    "hidden"
+                );
+
+            });
+
+        document
+            .getElementById(id)
+            .classList.remove(
+                "hidden"
+            );
+
+        window.scrollTo(
+            0,
+            0
+        );
+    }
+
+
+    // =====================================================
+    // CREATE
+    // =====================================================
+
+    function openCreate() {
+
+        showScreen(
+            "createScreen"
+        );
+
+        updateQualityLocks();
+    }
+
+
+    // =====================================================
+    // FILE
+    // =====================================================
+
+    document
+        .getElementById("videoInput")
+        .addEventListener(
+            "change",
+            function () {
+
+                if (
+                    !this.files ||
+                    !this.files.length
+                ) {
+                    return;
+                }
+
+                selectedFile =
+                    this.files[0];
+
+                document
+                    .getElementById(
+                        "fileName"
+                    )
+                    .textContent =
+                    selectedFile.name;
+
+            }
+        );
+
+
+    // =====================================================
+    // QUALITY
+    // =====================================================
+
+    function selectQuality(
+        quality,
+        element
+    ) {
+
+        const premium =
+            window.currentPremium === true;
+
+        if (
+            (quality > 1080) &&
+            !premium
+        ) {
+
+            openPremium();
+
+            return;
+        }
+
+        selectedQuality =
+            quality;
+
+        document
+            .querySelectorAll(
+                "[data-quality]"
+            )
+            .forEach(el => {
+
+                el.classList.remove(
+                    "active"
+                );
+
+            });
+
+        element.classList.add(
+            "active"
+        );
+    }
+
+
+    function updateQualityLocks() {
+
+        const premium =
+            window.currentPremium === true;
+
+        document
+            .querySelectorAll(
+                ".premium-quality"
+            )
+            .forEach(el => {
+
+                if (premium) {
+
+                    el.classList.remove(
+                        "locked"
+                    );
+
+                } else {
+
+                    el.classList.add(
+                        "locked"
+                    );
+
+                }
+
+            });
+    }
+
+
+    // =====================================================
+    // FORMAT
+    // =====================================================
+
+    function selectFormat(
+        format,
+        element
+    ) {
+
+        selectedFormat =
+            format;
+
+        element
+            .parentElement
+            .querySelectorAll(
+                ".option"
+            )
+            .forEach(el => {
+
+                el.classList.remove(
+                    "active"
+                );
+
+            });
+
+        element.classList.add(
+            "active"
+        );
+    }
+
+
+    // =====================================================
+    // SUBTITLES
+    // =====================================================
+
+    function selectSubtitles(
+        value,
+        element
+    ) {
+
+        selectedSubtitles =
+            value;
+
+        element
+            .parentElement
+            .querySelectorAll(
+                ".option"
+            )
+            .forEach(el => {
+
+                el.classList.remove(
+                    "active"
+                );
+
+            });
+
+        element.classList.add(
+            "active"
+        );
+    }
+
+
+    // =====================================================
+    // AI
+    // =====================================================
+
+    function toggleAI(
+        element
+    ) {
+
+        aiEnabled =
+            !aiEnabled;
+
+        element.textContent =
+            aiEnabled
+                ? "✨ AI улучшение: ВКЛ"
+                : "✨ AI улучшение: ВЫКЛ";
+
+        if (aiEnabled) {
+
+            element.classList.add(
+                "active"
+            );
+
+        } else {
+
+            element.classList.remove(
+                "active"
+            );
+
+        }
+    }
+
+
+    // =====================================================
+    // UPLOAD
+    // =====================================================
+
+    async function continueProcessing() {
+
+        if (!selectedFile) {
+
+            showStatus(
+                "Сначала выбери видео."
+            );
+
+            return;
+        }
+
+        if (!userId) {
+
+            showStatus(
+                "Открой Mini App именно через Telegram."
+            );
+
+            return;
+        }
+
+        if (
+            selectedQuality > 1080 &&
+            !window.currentPremium
+        ) {
+
+            openPremium();
+
+            return;
+        }
+
+
+        const status =
+            document.getElementById(
+                "uploadStatus"
+            );
+
+        status.classList.remove(
+            "hidden"
+        );
+
+        status.textContent =
+            "⏳ Загружаем видео...";
+
+
+        const formData =
+            new FormData();
+
+        formData.append(
+            "video",
+            selectedFile
+        );
+
+        formData.append(
+            "chat_id",
+            userId
+        );
+
+        formData.append(
+            "quality",
+            selectedQuality
+        );
+
+        formData.append(
+            "format",
+            selectedFormat
+        );
+
+        formData.append(
+            "subtitles",
+            selectedSubtitles
+        );
+
+        formData.append(
+            "ai",
+            aiEnabled
+                ? "true"
+                : "false"
+        );
+
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/upload",
+                    {
+                        method: "POST",
+                        body: formData
+                    }
+                );
+
+
+            const result =
+                await response.json();
+
+
+            if (!result.ok) {
+
+                throw new Error(
+                    result.error ||
+                    "Неизвестная ошибка"
+                );
+
+            }
+
+
+            status.textContent =
+                "✅ Видео отправлено на обработку! " +
+                "Результат придёт в Telegram.";
+
+            selectedFile =
+                null;
+
+            document
+                .getElementById(
+                    "videoInput"
+                )
+                .value = "";
+
+            document
+                .getElementById(
+                    "fileName"
+                )
+                .textContent = "";
+
+        }
+
+        catch (error) {
+
+            console.error(
+                error
+            );
+
+            status.textContent =
+                "❌ Ошибка: " +
+                error.message;
+        }
+    }
+
+
+    function showStatus(
+        text
+    ) {
+
+        const status =
+            document.getElementById(
+                "uploadStatus"
+            );
+
+        status.classList.remove(
+            "hidden"
+        );
+
+        status.textContent =
+            text;
+    }
+
+
+    // =====================================================
+    // PROCESSING
+    // =====================================================
+
+    async function openProcessing() {
+
+        showScreen(
+            "processingScreen"
+        );
+
+        await loadUserData();
+    }
+
+
+    function renderProcessing(
+        list
+    ) {
+
+        const container =
+            document.getElementById(
+                "processingList"
+            );
+
+        if (
+            !list ||
+            !list.length
+        ) {
+
+            container.innerHTML =
+                '<div class="empty">' +
+                'Сейчас нет видео на обработке.' +
+                '</div>';
+
+            return;
+        }
+
+
+        container.innerHTML =
+            list.map(item => `
+
+                <div class="card">
+
+                    <div class="video-item">
+
+                        <div class="video-icon">
+                            ⏳
+                        </div>
+
+                        <div class="video-info">
+
+                            <div class="video-name">
+                                ${escapeHtml(
+                                    item.filename
+                                )}
+                            </div>
+
+                            <div class="video-status">
+                                Обрабатывается...
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            `).join("");
+    }
+
+
+    // =====================================================
+    // HISTORY
+    // =====================================================
+
+    async function openHistory() {
+
+        showScreen(
+            "historyScreen"
+        );
+
+        await loadUserData();
+    }
+
+
+    function renderHistory(
+        list
+    ) {
+
+        const container =
+            document.getElementById(
+                "historyList"
+            );
+
+        if (
+            !list ||
+            !list.length
+        ) {
+
+            container.innerHTML =
+                '<div class="empty">' +
+                'Здесь пока ничего нет.' +
+                '</div>';
+
+            return;
+        }
+
+
+        container.innerHTML =
+            list.map(item => `
+
+                <div class="card">
+
+                    <div class="video-item">
+
+                        <div class="video-icon">
+                            🎬
+                        </div>
+
+                        <div class="video-info">
+
+                            <div class="video-name">
+                                ${escapeHtml(
+                                    item.filename
+                                )}
+                            </div>
+
+                            <div class="video-status">
+                                Обработано
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            `).join("");
+    }
+
+
+    // =====================================================
+    // PROFILE
+    // =====================================================
+
+    async function openProfile() {
+
+        showScreen(
+            "profileScreen"
+        );
+
+        await loadUserData();
+    }
+
+
+    function renderProfile(
+        data
+    ) {
+
+        document
+            .getElementById(
+                "profileId"
+            )
+            .textContent =
+            data.user_id || "—";
+
+
+        document
+            .getElementById(
+                "profileProcessed"
+            )
+            .textContent =
+            data.processed || 0;
+
+
+        document
+            .getElementById(
+                "profilePremium"
+            )
+            .textContent =
+            data.premium
+                ? "⭐ Premium"
+                : "Обычный";
+    }
+
+
+    // =====================================================
+    // PREMIUM
+    // =====================================================
+
+    async function openPremium() {
+
+        showScreen(
+            "premiumScreen"
+        );
+
+        await loadUserData();
+
+        updatePremiumPage();
+    }
+
+
+    function updatePremiumPage() {
+
+        const button =
+            document.getElementById(
+                "buyPremiumButton"
+            );
+
+        const status =
+            document.getElementById(
+                "premiumStatus"
+            );
+
+        if (
+            window.currentPremium
+        ) {
+
+            status.textContent =
+                "⭐ Premium уже активирован.";
+
+            button.textContent =
+                "⭐ Premium активен";
+
+            button.disabled =
+                true;
+
+            button.style.opacity =
+                "0.6";
+
+        } else {
+
+            status.textContent =
+                "Premium ещё не активирован.";
+
+            button.textContent =
+                "⭐ Купить Premium за 50";
+
+            button.disabled =
+                false;
+
+            button.style.opacity =
+                "1";
+        }
+    }
+
+
+    // =====================================================
+    // BUY PREMIUM
+    // =====================================================
+
+    async function buyPremium() {
+
+        if (!userId) {
+
+            showPremiumError(
+                "Открой Mini App через Telegram."
+            );
+
+            return;
+        }
+
+        if (
+            window.currentPremium
+        ) {
+            return;
+        }
+
+
+        const button =
+            document.getElementById(
+                "buyPremiumButton"
+            );
+
+        button.disabled =
+            true;
+
+        button.textContent =
+            "⏳ Открываем оплату...";
+
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/create-premium-invoice",
+                    {
+                        method: "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json"
+                        },
+
+                        body: JSON.stringify({
+                            user_id: userId
+                        })
+                    }
+                );
+
+
+            const result =
+                await response.json();
+
+
+            if (!result.ok) {
+
+                throw new Error(
+                    result.error ||
+                    "Не удалось создать оплату"
+                );
+            }
+
+
+            if (
+                tg &&
+                tg.openInvoice
+            ) {
+
+                tg.openInvoice(
+                    result.invoice_url,
+                    function(status) {
+
+                        if (
+                            status === "paid"
+                        ) {
+
+                            window.currentPremium =
+                                true;
+
+                            updatePremiumPage();
+
+                            updateQualityLocks();
+
+                            if (tg) {
+
+                                tg.showAlert(
+                                    "⭐ Premium успешно активирован!"
+                                );
+
+                            }
+
+                        }
+
+                        else if (
+                            status === "cancelled"
+                        ) {
+
+                            button.disabled =
+                                false;
+
+                            button.textContent =
+                                "⭐ Купить Premium за 50";
+                        }
+
+                        else if (
+                            status === "failed"
+                        ) {
+
+                            button.disabled =
+                                false;
+
+                            button.textContent =
+                                "⭐ Купить Premium за 50";
+
+                            showPremiumError(
+                                "Оплата не прошла."
+                            );
+                        }
+
+                    }
+                );
+
+            } else {
+
+                // Запасной вариант
+                // если openInvoice недоступен
+
+                window.location.href =
+                    result.invoice_url;
+            }
+
+        }
+
+        catch (error) {
+
+            console.error(
+                error
+            );
+
+            button.disabled =
+                false;
+
+            button.textContent =
+                "⭐ Купить Premium за 50";
+
+            showPremiumError(
+                error.message
+            );
+        }
+    }
+
+
+    function showPremiumError(
+        message
+    ) {
+
+        const status =
+            document.getElementById(
+                "premiumStatus"
+            );
+
+        status.textContent =
+            "❌ " + message;
+    }
+
+
+    // =====================================================
+    // LOAD USER DATA
+    // =====================================================
+
+    async function loadUserData() {
+
+        if (!userId) {
+            return;
+        }
+
+
+        try {
+
+            const response =
+                await fetch(
+                    "/api/user?user_id=" +
+                    encodeURIComponent(
+                        userId
+                    )
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (!data.ok) {
+                return;
+            }
+
+
+            window.currentPremium =
+                data.premium === true;
+
+
+            renderProfile(
+                data
+            );
+
+            renderProcessing(
+                data.processing
+            );
+
+            renderHistory(
+                data.history
+            );
+
+            updatePremiumPage();
+
+            updateQualityLocks();
+
+
+            const homeText =
+                document.getElementById(
+                    "premiumHomeText"
+                );
+
+
+            if (
+                data.premium
+            ) {
+
+                homeText.textContent =
+                    "⭐ Premium активен";
+
+            } else {
+
+                homeText.textContent =
+                    "2K и 4K качество";
+            }
+
+        }
+
+        catch (error) {
+
+            console.error(
+                "USER DATA ERROR:",
+                error
+            );
+
+        }
+
+    }
+
+
+    // =====================================================
+    // ESCAPE HTML
+    // =====================================================
+
+    function escapeHtml(
+        text
+    ) {
+
+        const div =
+            document.createElement(
+                "div"
+            );
+
+        div.textContent =
+            text || "";
+
+        return div.innerHTML;
+    }
+
+
+    // =====================================================
+    // INITIAL
+    // =====================================================
+
+    window.currentPremium =
+        false;
+
+    loadUserData();
+
+</script>
+
+</body>
+
+</html>
