@@ -2,6 +2,7 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
+
     <meta
         name="viewport"
         content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
@@ -18,27 +19,26 @@
 
         body {
             margin: 0;
-            padding: 0;
             background: var(--tg-theme-bg-color, #0e0e0e);
-            color: var(--tg-theme-text-color, white);
+            color: var(--tg-theme-text-color, #ffffff);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
 
         .container {
-            padding: 20px;
             max-width: 600px;
             margin: auto;
+            padding: 20px;
         }
 
         .logo {
             font-size: 30px;
             font-weight: 800;
-            margin-bottom: 5px;
         }
 
         .subtitle {
-            color: var(--tg-theme-hint-color, #888);
-            margin-bottom: 25px;
+            margin-top: 5px;
+            margin-bottom: 22px;
+            color: var(--tg-theme-hint-color, #8e8e93);
         }
 
         .card {
@@ -63,39 +63,68 @@
         button {
             border: 0;
             border-radius: 12px;
-            padding: 12px 8px;
+            padding: 13px 8px;
             background: var(--tg-theme-bg-color, #2a2a2a);
-            color: var(--tg-theme-text-color, white);
+            color: var(--tg-theme-text-color, #ffffff);
             font-size: 14px;
             font-weight: 600;
+            cursor: pointer;
         }
 
         button.active {
             background: var(--tg-theme-button-color, #2481cc);
-            color: var(--tg-theme-button-text-color, white);
+            color: var(--tg-theme-button-text-color, #ffffff);
         }
 
         .upload {
             width: 100%;
             padding: 17px;
-            margin-top: 8px;
             background: var(--tg-theme-button-color, #2481cc);
-            color: var(--tg-theme-button-text-color, white);
+            color: var(--tg-theme-button-text-color, #ffffff);
             font-size: 17px;
         }
 
-        .status {
-            margin-top: 18px;
-            padding: 15px;
-            border-radius: 14px;
-            background: var(--tg-theme-secondary-bg-color, #1c1c1e);
+        .continue {
+            width: 100%;
+            padding: 17px;
+            margin-top: 12px;
+            background: #31b55c;
+            color: white;
+            font-size: 17px;
             display: none;
         }
 
-        .small {
-            color: var(--tg-theme-hint-color, #888);
+        .file-info {
+            display: none;
+            margin-top: 14px;
+            padding: 14px;
+            border-radius: 14px;
+            background: var(--tg-theme-bg-color, #101010);
+        }
+
+        .file-name {
+            font-weight: 700;
+            word-break: break-word;
+        }
+
+        .file-size {
+            margin-top: 5px;
+            color: var(--tg-theme-hint-color, #8e8e93);
             font-size: 13px;
+        }
+
+        .status {
+            display: none;
+            margin-top: 14px;
+            padding: 14px;
+            border-radius: 14px;
+            background: var(--tg-theme-secondary-bg-color, #1c1c1e);
+        }
+
+        .small {
             margin-top: 8px;
+            color: var(--tg-theme-hint-color, #8e8e93);
+            font-size: 13px;
         }
     </style>
 </head>
@@ -110,35 +139,20 @@
         Монтаж коротких видео
     </div>
 
+
     <!-- QUALITY -->
 
     <div class="card">
 
-        <div class="title">
-            📺 Качество
-        </div>
+        <div class="title">📺 Качество</div>
 
         <div class="buttons">
 
-            <button onclick="setQuality(144)" id="q144">
-                144p
-            </button>
-
-            <button onclick="setQuality(360)" id="q360">
-                360p
-            </button>
-
-            <button onclick="setQuality(480)" id="q480">
-                480p
-            </button>
-
-            <button onclick="setQuality(720)" id="q720">
-                720p
-            </button>
-
-            <button onclick="setQuality(1080)" id="q1080">
-                1080p
-            </button>
+            <button onclick="setQuality(144)" id="q144">144p</button>
+            <button onclick="setQuality(360)" id="q360">360p</button>
+            <button onclick="setQuality(480)" id="q480">480p</button>
+            <button onclick="setQuality(720)" id="q720">720p</button>
+            <button onclick="setQuality(1080)" id="q1080">1080p</button>
 
         </div>
 
@@ -149,9 +163,7 @@
 
     <div class="card">
 
-        <div class="title">
-            📱 Формат
-        </div>
+        <div class="title">📱 Формат</div>
 
         <div class="buttons">
 
@@ -178,9 +190,7 @@
 
     <div class="card">
 
-        <div class="title">
-            💬 Субтитры
-        </div>
+        <div class="title">💬 Субтитры</div>
 
         <div class="buttons">
 
@@ -214,9 +224,7 @@
 
     <div class="card">
 
-        <div class="title">
-            🤖 AI улучшение
-        </div>
+        <div class="title">🤖 AI улучшение</div>
 
         <div class="buttons">
 
@@ -237,19 +245,17 @@
         </div>
 
         <div class="small">
-            AI-обработка будет подключена следующим этапом.
+            Настройка будет подключена к обработке следующим этапом.
         </div>
 
     </div>
 
 
-    <!-- UPLOAD -->
+    <!-- VIDEO -->
 
     <div class="card">
 
-        <div class="title">
-            🎬 Видео
-        </div>
+        <div class="title">🎬 Видео</div>
 
         <button
             class="upload"
@@ -265,6 +271,33 @@
             style="display:none"
             onchange="videoSelected()"
         >
+
+
+        <div
+            id="fileInfo"
+            class="file-info"
+        >
+
+            <div
+                id="fileName"
+                class="file-name"
+            ></div>
+
+            <div
+                id="fileSize"
+                class="file-size"
+            ></div>
+
+        </div>
+
+
+        <button
+            id="continueButton"
+            class="continue"
+            onclick="continueProcessing()"
+        >
+            🚀 Продолжить
+        </button>
 
     </div>
 
@@ -284,6 +317,7 @@
     tg.ready();
     tg.expand();
 
+
     let settings = {
         quality: 720,
         format: "vertical",
@@ -291,6 +325,13 @@
         ai: false
     };
 
+
+    let selectedFile = null;
+
+
+    // =========================
+    // UI
+    // =========================
 
     function updateUI() {
 
@@ -301,92 +342,170 @@
             });
 
 
-        document
-            .getElementById("q" + settings.quality)
-            .classList.add("active");
+        const qualityButton =
+            document.getElementById("q" + settings.quality);
+
+        if (qualityButton) {
+            qualityButton.classList.add("active");
+        }
 
 
         if (settings.format === "vertical") {
+
             document
                 .getElementById("formatVertical")
                 .classList.add("active");
+
         } else {
+
             document
                 .getElementById("formatOriginal")
                 .classList.add("active");
+
         }
 
 
         if (settings.subtitles === "off") {
+
             document
                 .getElementById("subOff")
                 .classList.add("active");
+
         }
 
         if (settings.subtitles === "normal") {
+
             document
                 .getElementById("subNormal")
                 .classList.add("active");
+
         }
 
         if (settings.subtitles === "bold") {
+
             document
                 .getElementById("subBold")
                 .classList.add("active");
+
         }
 
 
         if (settings.ai) {
+
             document
                 .getElementById("aiOn")
                 .classList.add("active");
+
         } else {
+
             document
                 .getElementById("aiOff")
                 .classList.add("active");
+
         }
     }
 
 
+    // =========================
+    // SETTINGS
+    // =========================
+
     function setQuality(value) {
+
         settings.quality = value;
+
         updateUI();
     }
 
 
     function setFormat(value) {
+
         settings.format = value;
+
         updateUI();
     }
 
 
     function setSubtitles(value) {
+
         settings.subtitles = value;
+
         updateUI();
     }
 
 
     function setAI(value) {
+
         settings.ai = value;
+
         updateUI();
     }
 
 
+    // =========================
+    // VIDEO
+    // =========================
+
     function chooseVideo() {
+
         document
             .getElementById("video")
             .click();
     }
 
 
+    function formatBytes(bytes) {
+
+        if (bytes < 1024 * 1024) {
+
+            return (
+                (bytes / 1024).toFixed(1) +
+                " KB"
+            );
+
+        }
+
+        return (
+            (bytes / (1024 * 1024)).toFixed(1) +
+            " MB"
+        );
+    }
+
+
     function videoSelected() {
 
-        const file =
-            document.getElementById("video").files[0];
+        const input =
+            document.getElementById("video");
 
-        if (!file) {
+        selectedFile = input.files[0];
+
+
+        if (!selectedFile) {
             return;
         }
+
+
+        document
+            .getElementById("fileName")
+            .textContent =
+            "🎬 " + selectedFile.name;
+
+
+        document
+            .getElementById("fileSize")
+            .textContent =
+            "📦 " + formatBytes(selectedFile.size);
+
+
+        document
+            .getElementById("fileInfo")
+            .style.display = "block";
+
+
+        document
+            .getElementById("continueButton")
+            .style.display = "block";
+
 
         const status =
             document.getElementById("status");
@@ -394,22 +513,109 @@
         status.style.display = "block";
 
         status.innerHTML =
-            "📤 Видео выбрано<br><br>" +
-            "📺 " + settings.quality + "p<br>" +
-            "📱 " +
-            (settings.format === "vertical"
-                ? "9:16"
-                : "Оригинал") +
-            "<br>" +
-            "💬 " + settings.subtitles +
-            "<br>" +
-            "🤖 AI: " +
-            (settings.ai ? "Вкл" : "Выкл");
+            "✅ Видео выбрано<br><br>" +
 
-        // Следующим этапом здесь подключим
-        // отправку видео в Telegram-бот.
+            "📺 Качество: " +
+            settings.quality +
+            "p<br>" +
+
+            "📱 Формат: " +
+            (
+                settings.format === "vertical"
+                    ? "9:16"
+                    : "Оригинал"
+            ) +
+            "<br>" +
+
+            "💬 Субтитры: " +
+            settings.subtitles +
+            "<br>" +
+
+            "🤖 AI: " +
+            (
+                settings.ai
+                    ? "Вкл"
+                    : "Выкл"
+            );
     }
 
+
+    // =========================
+    // CONTINUE
+    // =========================
+
+    function continueProcessing() {
+
+        if (!selectedFile) {
+
+            tg.showAlert(
+                "Сначала выбери видео."
+            );
+
+            return;
+        }
+
+
+        const status =
+            document.getElementById("status");
+
+
+        status.style.display = "block";
+
+
+        status.innerHTML =
+            "🚀 <b>Готово к обработке!</b><br><br>" +
+
+            "Видео: " +
+            selectedFile.name +
+            "<br>" +
+
+            "Качество: " +
+            settings.quality +
+            "p<br>" +
+
+            "Формат: " +
+            (
+                settings.format === "vertical"
+                    ? "9:16"
+                    : "Оригинал"
+            ) +
+            "<br>" +
+
+            "Субтитры: " +
+            settings.subtitles +
+            "<br>" +
+
+            "AI: " +
+            (
+                settings.ai
+                    ? "Вкл"
+                    : "Выкл"
+            );
+
+
+        tg.MainButton.text = "🚀 Обработать";
+
+        tg.MainButton.show();
+
+
+        tg.MainButton.onClick(() => {
+
+            tg.sendData(
+                JSON.stringify({
+                    action: "process",
+                    settings: settings
+                })
+            );
+
+        });
+
+    }
+
+
+    // =========================
+    // START
+    // =========================
 
     updateUI();
 
