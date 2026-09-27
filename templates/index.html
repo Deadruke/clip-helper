@@ -1,1 +1,419 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    >
 
+    <title>ClipForge</title>
+
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: var(--tg-theme-bg-color, #0e0e0e);
+            color: var(--tg-theme-text-color, white);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        .container {
+            padding: 20px;
+            max-width: 600px;
+            margin: auto;
+        }
+
+        .logo {
+            font-size: 30px;
+            font-weight: 800;
+            margin-bottom: 5px;
+        }
+
+        .subtitle {
+            color: var(--tg-theme-hint-color, #888);
+            margin-bottom: 25px;
+        }
+
+        .card {
+            background: var(--tg-theme-secondary-bg-color, #1c1c1e);
+            border-radius: 18px;
+            padding: 18px;
+            margin-bottom: 14px;
+        }
+
+        .title {
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .buttons {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 12px;
+            padding: 12px 8px;
+            background: var(--tg-theme-bg-color, #2a2a2a);
+            color: var(--tg-theme-text-color, white);
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        button.active {
+            background: var(--tg-theme-button-color, #2481cc);
+            color: var(--tg-theme-button-text-color, white);
+        }
+
+        .upload {
+            width: 100%;
+            padding: 17px;
+            margin-top: 8px;
+            background: var(--tg-theme-button-color, #2481cc);
+            color: var(--tg-theme-button-text-color, white);
+            font-size: 17px;
+        }
+
+        .status {
+            margin-top: 18px;
+            padding: 15px;
+            border-radius: 14px;
+            background: var(--tg-theme-secondary-bg-color, #1c1c1e);
+            display: none;
+        }
+
+        .small {
+            color: var(--tg-theme-hint-color, #888);
+            font-size: 13px;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="logo">🎬 ClipForge</div>
+
+    <div class="subtitle">
+        Монтаж коротких видео
+    </div>
+
+    <!-- QUALITY -->
+
+    <div class="card">
+
+        <div class="title">
+            📺 Качество
+        </div>
+
+        <div class="buttons">
+
+            <button onclick="setQuality(144)" id="q144">
+                144p
+            </button>
+
+            <button onclick="setQuality(360)" id="q360">
+                360p
+            </button>
+
+            <button onclick="setQuality(480)" id="q480">
+                480p
+            </button>
+
+            <button onclick="setQuality(720)" id="q720">
+                720p
+            </button>
+
+            <button onclick="setQuality(1080)" id="q1080">
+                1080p
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <!-- FORMAT -->
+
+    <div class="card">
+
+        <div class="title">
+            📱 Формат
+        </div>
+
+        <div class="buttons">
+
+            <button
+                id="formatVertical"
+                onclick="setFormat('vertical')"
+            >
+                9:16
+            </button>
+
+            <button
+                id="formatOriginal"
+                onclick="setFormat('original')"
+            >
+                Оригинал
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <!-- SUBTITLES -->
+
+    <div class="card">
+
+        <div class="title">
+            💬 Субтитры
+        </div>
+
+        <div class="buttons">
+
+            <button
+                id="subOff"
+                onclick="setSubtitles('off')"
+            >
+                Выкл
+            </button>
+
+            <button
+                id="subNormal"
+                onclick="setSubtitles('normal')"
+            >
+                Обычные
+            </button>
+
+            <button
+                id="subBold"
+                onclick="setSubtitles('bold')"
+            >
+                Жирные
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <!-- AI -->
+
+    <div class="card">
+
+        <div class="title">
+            🤖 AI улучшение
+        </div>
+
+        <div class="buttons">
+
+            <button
+                id="aiOff"
+                onclick="setAI(false)"
+            >
+                Выкл
+            </button>
+
+            <button
+                id="aiOn"
+                onclick="setAI(true)"
+            >
+                Вкл
+            </button>
+
+        </div>
+
+        <div class="small">
+            AI-обработка будет подключена следующим этапом.
+        </div>
+
+    </div>
+
+
+    <!-- UPLOAD -->
+
+    <div class="card">
+
+        <div class="title">
+            🎬 Видео
+        </div>
+
+        <button
+            class="upload"
+            onclick="chooseVideo()"
+        >
+            📤 Выбрать видео
+        </button>
+
+        <input
+            id="video"
+            type="file"
+            accept="video/*"
+            style="display:none"
+            onchange="videoSelected()"
+        >
+
+    </div>
+
+
+    <div
+        id="status"
+        class="status"
+    ></div>
+
+</div>
+
+
+<script>
+
+    const tg = window.Telegram.WebApp;
+
+    tg.ready();
+    tg.expand();
+
+    let settings = {
+        quality: 720,
+        format: "vertical",
+        subtitles: "off",
+        ai: false
+    };
+
+
+    function updateUI() {
+
+        document
+            .querySelectorAll("button")
+            .forEach(button => {
+                button.classList.remove("active");
+            });
+
+
+        document
+            .getElementById("q" + settings.quality)
+            .classList.add("active");
+
+
+        if (settings.format === "vertical") {
+            document
+                .getElementById("formatVertical")
+                .classList.add("active");
+        } else {
+            document
+                .getElementById("formatOriginal")
+                .classList.add("active");
+        }
+
+
+        if (settings.subtitles === "off") {
+            document
+                .getElementById("subOff")
+                .classList.add("active");
+        }
+
+        if (settings.subtitles === "normal") {
+            document
+                .getElementById("subNormal")
+                .classList.add("active");
+        }
+
+        if (settings.subtitles === "bold") {
+            document
+                .getElementById("subBold")
+                .classList.add("active");
+        }
+
+
+        if (settings.ai) {
+            document
+                .getElementById("aiOn")
+                .classList.add("active");
+        } else {
+            document
+                .getElementById("aiOff")
+                .classList.add("active");
+        }
+    }
+
+
+    function setQuality(value) {
+        settings.quality = value;
+        updateUI();
+    }
+
+
+    function setFormat(value) {
+        settings.format = value;
+        updateUI();
+    }
+
+
+    function setSubtitles(value) {
+        settings.subtitles = value;
+        updateUI();
+    }
+
+
+    function setAI(value) {
+        settings.ai = value;
+        updateUI();
+    }
+
+
+    function chooseVideo() {
+        document
+            .getElementById("video")
+            .click();
+    }
+
+
+    function videoSelected() {
+
+        const file =
+            document.getElementById("video").files[0];
+
+        if (!file) {
+            return;
+        }
+
+        const status =
+            document.getElementById("status");
+
+        status.style.display = "block";
+
+        status.innerHTML =
+            "📤 Видео выбрано<br><br>" +
+            "📺 " + settings.quality + "p<br>" +
+            "📱 " +
+            (settings.format === "vertical"
+                ? "9:16"
+                : "Оригинал") +
+            "<br>" +
+            "💬 " + settings.subtitles +
+            "<br>" +
+            "🤖 AI: " +
+            (settings.ai ? "Вкл" : "Выкл");
+
+        // Следующим этапом здесь подключим
+        // отправку видео в Telegram-бот.
+    }
+
+
+    updateUI();
+
+</script>
+
+</body>
+</html>
